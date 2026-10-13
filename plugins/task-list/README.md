@@ -45,10 +45,10 @@ While [superpowers](https://github.com/obra/superpowers) runs a plan with subage
   ◻ Task 3 The three app shells
 ```
 
-**`–`** folds the band to one line, where the work is: `+` unfolds it. It stays folded for the rest of the session; every new session starts unfolded.
+**`–`** folds the band to one line, where the work is: `□` unfolds it. It stays folded for the rest of the session; every new session starts unfolded.
 
 ```
-Phase 7 (12/12) \ Plan (3/3) \ Task (3/7) The three app shells · fix round 1      Details  +  ✕
+Phase 7 (12/12) \ Plan (3/3) \ Task (3/7) The three app shells · fix round 1      Details  □  ✕
 ```
 
 Without a phase the line starts at `Plan`; with only a todo list it reads `Todo (2/4) Build`.
