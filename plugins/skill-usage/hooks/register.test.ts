@@ -39,16 +39,21 @@ const engine = (on: On) => {
       },
     } as never,
   }))
-  on('skill.prompt', async (_$, e) => ({ text: e.text }))
+  on('command.run', async () => ({ text: 'ok' }))
   on('tool.call', async () => ({ result: 'ok' }))
   on('ui.render', { component: 'AbovePrompt' }, async () => ({ type: 'engine', ref: 0 }) as RenderElement)
 }
 
+const callSkill = ($: Engine, skill: string) => $.tool.call({ tool: 'Skill', skill })
+const typeCommand = ($: Engine, command: string) => $.command.run({ command, args: '', origin: 'user' } as never)
+
+// Claude calls plugin-authoring twice, the person types /review, and /help (a built-in, not a skill)
 const use = async ($: Engine) => {
   await $.session.start({ cwd: '/tmp', surface: 'desktop', isInteractive: true })
-  for (const skill of ['plugin-authoring', 'plugin-authoring', 'review']) {
-    await $.skill.prompt({ skill, text: 'prompt' })
-  }
+  await callSkill($, 'plugin-authoring')
+  await callSkill($, 'plugin-authoring')
+  await typeCommand($, 'review')
+  await typeCommand($, 'help')
   for (const tool of ['mcp__workbench-gitlab__get_mr', 'mcp__workbench-gitlab__get_diff', 'mcp__claude_ai_Gmail__send', 'Bash']) {
     await $.tool.call({ tool, command: 'ls' } as never)
   }
@@ -63,12 +68,12 @@ test('shows only used skills and MCP servers above the prompt, top five of each'
 
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ ...band(), surface })
-    // Unused skills stay out of the band
+    // Claude's Skill calls and the typed /review both count; /help (not a skill) and unused skills stay out
     expect(await texts(ui)).toEqual(['plugin-authoring 2', 'review 1', 'workbench-gitlab 2', 'claude.ai Gmail 1'])
   }
 
   for (const skill of ['loop', 'init', 'simplify', 'dataviz']) {
-    await $.skill.prompt({ skill, text: 'prompt' })
+    await callSkill($, skill)
   }
 
   for (const surface of SURFACES) {
@@ -122,7 +127,7 @@ test('hides until something is used, keeps another mod band on top and steps asi
 
     return h(Text, {}, 'task band') as RenderElement
   })
-  on('skill.prompt', async (_$, e) => ({ text: e.text }))
+  on('tool.call', async () => ({ result: 'ok' }))
   await $.session.start({ cwd: '/tmp', surface: 'desktop', isInteractive: true })
 
   for (const surface of SURFACES) {
@@ -130,7 +135,7 @@ test('hides until something is used, keeps another mod band on top and steps asi
     expect(await texts(unused)).toEqual(['task band'])
   }
 
-  await $.skill.prompt({ skill: 'review', text: 'prompt' })
+  await callSkill($, 'review')
 
   for (const surface of SURFACES) {
     const shared = await $.ui.mount({ ...band(), surface })

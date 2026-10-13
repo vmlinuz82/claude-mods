@@ -26,6 +26,6 @@ claude plugin install skill-usage@claude-mods
 ## Behaviour worth knowing
 
 - **Counts are per session** and start at 0 in each new one.
-- A skill counts each time it's used: typed as `/name`, called by Claude, or loaded into a subagent. An MCP server counts each call to one of its tools.
+- A skill counts each time it's used: called by Claude, or typed as `/name`. Skills preloaded into a subagent's definition aren't counted. An MCP server counts each call to one of its tools.
 - The band stays hidden until something is used, and each line appears only once its group has a use.
 - The list of skills and servers is read again at every turn, since MCP servers often connect after the session starts.

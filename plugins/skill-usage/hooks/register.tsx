@@ -67,9 +67,20 @@ export const register: Register = on => {
     return { text: `${PANE_TITLE} pane opened.` }
   })
 
-  // Counted before the call runs, so a failed count never re-runs or blocks the skill
-  on('skill.prompt', async ($, e, next) => {
+  // `skill.prompt` doesn't fire on this build, so skills are counted where they start: Claude's
+  // Skill tool calls, and `/name` typed by the person (a command run, counted only when it names a
+  // skill). Counted before the call runs, so a failed count never re-runs or blocks the skill
+  on('tool.call', { tool: 'Skill' }, async ($, e, next) => {
     await update($, counts, (now: Counts) => ({ ...now, skills: bump(now.skills, e.skill) }))
+
+    return next(e)
+  }).catch(($, e, next) => next(e))
+
+  on('command.run', async ($, e, next) => {
+    const { skills } = await read($, catalog)
+    if (skills.includes(e.command)) {
+      await update($, counts, (now: Counts) => ({ ...now, skills: bump(now.skills, e.command) }))
+    }
 
     return next(e)
   }).catch(($, e, next) => next(e))
