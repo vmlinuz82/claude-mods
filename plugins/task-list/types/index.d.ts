@@ -49,7 +49,8 @@ export type PlanView = {
 declare module 'claude-code' {
   interface PluginState {
     // closedOn: what the band showed when it was closed; the band stays hidden until it changes
-    'task-list': { tasks: Task[]; closedOn: string | null; plan: PlanView | null; cwd: string | null }
+    // isMinimized: the band folded to one breadcrumb line
+    'task-list': { tasks: Task[]; closedOn: string | null; plan: PlanView | null; cwd: string | null; isMinimized: boolean }
   }
 
   interface McpToolInputs {

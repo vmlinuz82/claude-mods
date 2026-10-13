@@ -2,12 +2,14 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, RenderInput } from 'claude-code'
 
 import type { PlanTask, PlanView, Task, Todo } from '../types'
-import { isPlanTodo, loadPlanView } from './sdd'
+import { breadcrumb, isPlanTodo, loadPlanView } from './sdd'
 
 const tasks = atom({ plugin: 'task-list', key: 'tasks' } as const, [])
 const closedOn = atom({ plugin: 'task-list', key: 'closedOn' } as const, null)
 const plan = atom({ plugin: 'task-list', key: 'plan' } as const, null)
 const cwd = atom({ plugin: 'task-list', key: 'cwd' } as const, null)
+// The band folded to one line, for this session only: every new session starts expanded
+const isMinimized = atom({ plugin: 'task-list', key: 'isMinimized' } as const, false)
 
 const snapshot = (running: PlanView | null, list: readonly Task[]): string => JSON.stringify({ running, list })
 
@@ -241,8 +243,15 @@ export const register: Register = on => {
 
     const { Box, Button, Text } = $.ui.resolve(e)
     const active = list.find(one => one.status === 'in_progress')
-    const summary =
-      running === null
+    const minimized = await read($, isMinimized)
+    const setMinimized = (value: boolean) => update($, isMinimized, () => value)
+    // Minimized: one line naming where the work is; the todo in progress, else the next to do
+    const current = active ?? list.find(one => one.status !== 'completed')
+    const summary = minimized
+      ? running === null
+        ? `Todo (${current ? list.indexOf(current) + 1 : 0}/${list.length}) ${current?.subject ?? ''}`
+        : breadcrumb(running)
+      : running === null
         ? `${done}/${list.length} done${active?.activeForm ? ` · ${active.activeForm}…` : ''}`
         : `${MARK.in_progress} ${planSummary(running.name, running.tasks)}`
 
@@ -253,6 +262,11 @@ export const register: Register = on => {
             {summary}
           </Text>
           <Box key="actions" flexDirection="row" columnGap={2}>
+            {minimized ? (
+              <Button key="restore" label="+" plain dimColor onPress={() => setMinimized(false)} />
+            ) : (
+              <Button key="minimize" label="–" plain dimColor onPress={() => setMinimized(true)} />
+            )}
             <Button key="details" label="Details" plain dimColor onPress={() => $.ui.open({ id: PANE, title: PANE_TITLE })} />
             <Button
               key="close"
@@ -264,9 +278,7 @@ export const register: Register = on => {
             />
           </Box>
         </Box>
-        {running === null
-          ? todoLines($, e, list)
-          : taskTree($, e, running.tasks, hasTodos ? list : [])}
+        {!minimized && (running === null ? todoLines($, e, list) : taskTree($, e, running.tasks, hasTodos ? list : []))}
       </Box>
     )
   })

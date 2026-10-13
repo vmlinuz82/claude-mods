@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { isPlanTodo, loadPlanView, parseLedger, parsePlan, planTasks, splitTitle } from './sdd'
+import { breadcrumb, isPlanTodo, loadPlanView, parseLedger, parsePlan, planTasks, splitTitle } from './sdd'
 import { LEDGER, memoryFiles, NOW, PHASE_7_DISK, PLAN, PLANS, SDD } from './sdd.fixtures'
 
 test('parsePlan reads the title and the task headings outside code fences', () => {
@@ -210,4 +210,25 @@ test('loadPlanView counts a plan without a ledger as done before the running pla
     ['Plan 3 — Frontend Foundation', 'in_progress', ['completed', 'in_progress', 'pending']],
     ['Plan 4 — Later', 'pending', ['pending']],
   ])
+})
+
+test('breadcrumb places the task in its plan and the plan in its phase', async () => {
+  const phased = await loadPlanView(memoryFiles(PHASE_7_DISK), '/repo', NOW)
+  const unphased = await loadPlanView(
+    memoryFiles({
+      [`${PLANS}/2026-09-13-anketi-foundation.md`]: { text: '# Anketi Foundation Implementation Plan\n### Task 1: Scaffold\n### Task 2: Models' },
+      [`${PLANS}/2026-09-14-anketi-production.md`]: { text: '# Production Implementation Plan\n### Task 1: Deploy' },
+      [`${SDD}/2026-09-13-anketi-foundation/progress.md`]: {
+        text: '# SDD ledger — plan: docs/superpowers/plans/2026-09-13-anketi-foundation.md\nTask 1: complete (a..b)',
+      },
+    }),
+    '/repo',
+    NOW,
+  )
+
+  // Phase 7 is the second of two phases; with no task in progress the next one to do shows
+  expect(phased && breadcrumb(phased)).toBe(
+    'Phase 7 (2/2) \\ Plan (3/4) \\ Task (2/3) packages/api — OpenAPI types and the session-aware client · fix round 1',
+  )
+  expect(unphased && breadcrumb(unphased)).toBe('Plan (1/2) \\ Task (2/2) Models')
 })

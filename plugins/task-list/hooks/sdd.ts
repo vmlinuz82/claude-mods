@@ -276,3 +276,26 @@ export const loadPlanView = async (files: Files, cwd: string, now: number): Prom
     groups,
   }
 }
+
+// The running task in one line: Phase 7 (13/13) \ Plan (3/4) \ Task (3/7) title · step. The task is
+// the one in progress, else the next to do; a plan without a phase starts at Plan
+export const breadcrumb = (view: PlanView): string => {
+  const phases = view.groups.filter(group => group.phase !== null)
+  const group = view.groups.find(one => one.plans.some(row => row.isCurrent))
+  const planAt = group ? group.plans.findIndex(row => row.isCurrent) + 1 : 1
+  const planCount = group ? group.plans.length : 1
+  const task =
+    view.tasks.find(one => one.status === 'in_progress') ??
+    view.tasks.find(one => one.status === 'pending') ??
+    view.tasks[view.tasks.length - 1]
+  const taskAt = task ? view.tasks.indexOf(task) + 1 : 0
+  const crumbs = [
+    `Plan (${planAt}/${planCount})`,
+    `Task (${taskAt}/${view.tasks.length})${task ? ` ${task.title}${task.step ? ` · ${task.step}` : ''}` : ''}`,
+  ]
+  if (view.phase !== null && group) {
+    crumbs.unshift(`Phase ${view.phase} (${phases.indexOf(group) + 1}/${phases.length})`)
+  }
+
+  return crumbs.join(' \\ ')
+}

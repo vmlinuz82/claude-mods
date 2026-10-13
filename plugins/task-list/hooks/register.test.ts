@@ -244,7 +244,7 @@ test('the band shows the running plan with the todos under the task in progress'
       '◼ Plan 3 — Frontend Foundation · 1/3 tasks',
       ...PLAN_3_TASKS,
     ])
-    expect((await ui.findAll({ type: 'Button' })).map(one => one.key)).toEqual(['details', 'close'])
+    expect((await ui.findAll({ type: 'Button' })).map(one => one.key)).toEqual(['minimize', 'details', 'close'])
   }
 })
 
@@ -312,5 +312,56 @@ test('the pane shows every phase, the running phase down to its tasks and todos'
     const strip = await $.ui.mount({ ...band(true), surface })
     await strip.press({ key: 'details' })
     expect(opened).toEqual(['task-list'])
+  }
+})
+
+const BREADCRUMB = 'Phase 7 (2/2) \\ Plan (3/4) \\ Task (2/3) packages/api — OpenAPI types and the session-aware client · fix round 1'
+
+test('the minimize button folds the band to one breadcrumb line until restored', async ($, on) => {
+  superpowersSession(on, memoryFiles(PHASE_7_DISK))
+  await $.session.start({ cwd: '/repo', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'TodoWrite', todos: [...TODOS] })
+  const draw = async (surface: (typeof SURFACES)[number]) => {
+    const ui = await $.ui.mount({ ...band(true), surface })
+
+    return {
+      ui,
+      lines: (await ui.findAll({ type: 'Text' })).map(one => one.text),
+      buttons: (await ui.findAll({ type: 'Button' })).map(one => one.key),
+    }
+  }
+
+  for (const surface of SURFACES) {
+    await (await draw(surface)).ui.press({ key: 'minimize' })
+    const minimized = await draw(surface)
+    expect(minimized.lines).toEqual([BREADCRUMB])
+    expect(minimized.buttons).toEqual(['restore', 'details', 'close'])
+
+    // It stays folded as the band redraws
+    expect((await draw(surface)).lines).toEqual([BREADCRUMB])
+
+    await minimized.ui.press({ key: 'restore' })
+    const restored = await draw(surface)
+    expect(restored.lines).toEqual(['◼ Plan 3 — Frontend Foundation · 1/3 tasks', ...PLAN_3_TASKS])
+    expect(restored.buttons).toEqual(['minimize', 'details', 'close'])
+  }
+})
+
+test('a minimized todo list shows the todo in progress and its place', async ($, on) => {
+  superpowersSession(on, memoryFiles({}))
+  await $.session.start({ cwd: '/repo', surface: 'desktop', isInteractive: true })
+  await $.tool.call({
+    tool: 'TodoWrite',
+    todos: [
+      { content: 'Plan', status: 'completed', activeForm: 'Planning' },
+      { content: 'Build', status: 'in_progress', activeForm: 'Building' },
+      { content: 'Ship', status: 'pending', activeForm: 'Shipping' },
+    ],
+  })
+
+  await (await $.ui.mount({ ...band(true), surface: 'desktop' })).press({ key: 'minimize' })
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ ...band(true), surface })
+    expect((await ui.findAll({ type: 'Text' })).map(one => one.text)).toEqual(['Todo (2/3) Build'])
   }
 })
