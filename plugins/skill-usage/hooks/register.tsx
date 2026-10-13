@@ -146,12 +146,16 @@ export const register: Register = on => {
     const known = await read($, catalog)
     const used = await read($, counts)
     const sections = [
-      { key: 'skills', title: 'Skill', rows: toRows(known.skills, used.skills) },
-      { key: 'servers', title: 'MCP server', rows: toRows(known.servers, used.servers) },
-    ]
+      { key: 'skills', title: 'Skill', rows: toRows(known.skills, used.skills).filter(row => row.count > 0) },
+      { key: 'servers', title: 'MCP server', rows: toRows(known.servers, used.servers).filter(row => row.count > 0) },
+    ].filter(section => section.rows.length > 0)
 
-    // One table per section: the name on the left, the count pushed to the right edge, so the
-    // counts line up in the desktop app's proportional font as well as in the terminal
+    if (sections.length === 0) {
+      return <Text dimColor>No skills or MCP servers used in this session yet.</Text>
+    }
+
+    // One table per section with usage: the name on the left, the count pushed to the right edge,
+    // so the counts line up in the desktop app's proportional font as well as in the terminal
     return (
       <Box flexDirection="column">
         {sections.map(section => (
@@ -164,21 +168,12 @@ export const register: Register = on => {
                 Uses
               </Text>
             </Box>
-            {section.rows.length === 0 && (
-              <Text key="none" dimColor>
-                none in this session
-              </Text>
-            )}
             {section.rows.map(row => (
               <Box key={row.name} flexDirection="row" justifyContent="space-between" columnGap={2}>
                 <Box key="name" flexShrink={1}>
-                  <Text dimColor={row.count === 0} wrap="truncate-end">
-                    {row.name}
-                  </Text>
+                  <Text wrap="truncate-end">{row.name}</Text>
                 </Box>
-                <Text key="count" dimColor={row.count === 0}>
-                  {row.count}
-                </Text>
+                <Text key="count">{row.count}</Text>
               </Box>
             ))}
           </Box>

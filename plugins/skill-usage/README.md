@@ -21,7 +21,7 @@ claude plugin install skill-usage@claude-mods
 
 ## Usage & expected output
 
-- Click `Skills` or `MCP` above the prompt, or run `/skill-usage`, for a pane with a table of every skill and MCP server in the session, most used first, unused ones dimmed.
+- Click `Skills` or `MCP` above the prompt, or run `/skill-usage`, for a pane with a table of every skill and MCP server used in the session, most used first.
 
 ## Behaviour worth knowing
 

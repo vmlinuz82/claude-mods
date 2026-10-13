@@ -86,28 +86,28 @@ test('shows only used skills and MCP servers above the prompt, top five of each'
   }
 })
 
-test('the pane is a table of every skill and server, most used first, unused ones dimmed', async ($, on) => {
+test('the pane is a table of the skills and servers used, most used first', async ($, on) => {
   engine(on)
+  await $.session.start({ cwd: '/tmp', surface: 'desktop', isInteractive: true })
+
+  const open = await Promise.all(SURFACES.map(surface => $.ui.mount({ ...pane, surface })))
+  for (const ui of open) {
+    expect(await texts(ui)).toEqual(['No skills or MCP servers used in this session yet.'])
+  }
+
   await use($)
 
-  for (const surface of SURFACES) {
-    const ui = await $.ui.mount({ ...pane, surface })
-    const all = await ui.findAll({ type: 'Text' })
-    // Read in pairs: name, then its count on the same row
-    expect(all.map(one => one.text)).toEqual([
+  // The open pane redraws as uses come in
+  for (const ui of open) {
+    // Read in pairs: name, then its count on the same row; the four unused skills stay out
+    expect(await texts(ui)).toEqual([
       'Skill', 'Uses',
       'plugin-authoring', '2',
       'review', '1',
-      'dataviz', '0',
-      'init', '0',
-      'loop', '0',
-      'simplify', '0',
       'MCP server', 'Uses',
       'workbench-gitlab', '2',
       'claude.ai Gmail', '1',
     ])
-    expect(all[2]?.props.dimColor).toBe(false)
-    expect(all[6]?.props.dimColor).toBe(true)
   }
 })
 
