@@ -15,7 +15,8 @@ export type Todo = {
 
 declare module 'claude-code' {
   interface PluginState {
-    'task-list': { tasks: Task[] }
+    // closedOn: the list as it was when the band was closed; the band stays hidden until it changes
+    'task-list': { tasks: Task[]; closedOn: string | null }
   }
 
   interface McpToolInputs {

@@ -4,6 +4,9 @@ import type { Register } from 'claude-code'
 import type { Task, Todo } from '../types'
 
 const tasks = atom({ plugin: 'task-list', key: 'tasks' } as const, [])
+const closedOn = atom({ plugin: 'task-list', key: 'closedOn' } as const, null)
+
+const snapshot = (list: readonly Task[]): string => JSON.stringify(list)
 
 const MARK = { pending: '◻', in_progress: '◼', completed: '✔' } as const
 
@@ -168,18 +171,31 @@ export const register: Register = on => {
     // A finished list is history, not current work, so it hides even while Claude keeps working
     const isFinished = done === list.length
 
-    if (e.props.hasSurvey || list.length === 0 || isFinished) {
+    // Closed by the person: hidden until the list changes
+    const isClosed = (await read($, closedOn)) === snapshot(list)
+
+    if (e.props.hasSurvey || list.length === 0 || isFinished || isClosed) {
       return next(e)
     }
 
-    const { Box, Text } = $.ui.resolve(e)
+    const { Box, Button, Text } = $.ui.resolve(e)
     const active = list.find(one => one.status === 'in_progress')
 
     return (
       <Box flexDirection="column">
-        <Text key="summary" dimColor>
-          {done}/{list.length} done{active?.activeForm ? ` · ${active.activeForm}…` : ''}
-        </Text>
+        <Box key="head" flexDirection="row" justifyContent="space-between" columnGap={2}>
+          <Text key="summary" dimColor>
+            {done}/{list.length} done{active?.activeForm ? ` · ${active.activeForm}…` : ''}
+          </Text>
+          <Button
+            key="close"
+            label="✕"
+            role="dismiss"
+            plain
+            dimColor
+            onPress={() => update($, closedOn, () => snapshot(list))}
+          />
+        </Box>
         {list.map(task => (
           <Text
             key={task.id}

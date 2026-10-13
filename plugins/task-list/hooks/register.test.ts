@@ -100,6 +100,45 @@ test('/task-demo fills the band and /task-demo clear empties it', async ($, on) 
   expect((await cleared.findAll({ type: 'Text' })).map(one => one.text)).toEqual(['engine band'])
 })
 
+test('the close button hides the band until the list changes', async ($, on) => {
+  on('tool.call', { tool: 'TodoWrite' }, async (_$, e) => ({
+    result: { oldTodos: [], newTodos: e.todos },
+  }))
+  on('ui.render', { component: 'AbovePrompt' }, ($, e) => {
+    const { Text } = $.ui.resolve(e)
+
+    return h(Text, {}, 'engine band') as RenderElement
+  })
+  // A list of its own per surface, so one surface's close never carries into the next
+  const write = (surface: (typeof SURFACES)[number], status: 'pending' | 'in_progress') =>
+    $.tool.call({
+      tool: 'TodoWrite',
+      todos: [
+        { content: 'Plan', status: 'in_progress', activeForm: 'Planning' },
+        { content: `Build for ${surface}`, status, activeForm: 'Building' },
+      ],
+    })
+  const lines = async (surface: (typeof SURFACES)[number]) => {
+    const ui = await $.ui.mount({ ...band(true), surface })
+
+    return (await ui.findAll({ type: 'Text' })).map(one => one.text)
+  }
+
+  for (const surface of SURFACES) {
+    await write(surface, 'pending')
+    const ui = await $.ui.mount({ ...band(true), surface })
+    expect((await ui.find({ key: 'close' }))?.props.role).toBe('dismiss')
+    await ui.press({ key: 'close' })
+    expect(await lines(surface)).toEqual(['engine band'])
+
+    // The same list written again stays closed; a changed one brings the band back
+    await write(surface, 'pending')
+    expect(await lines(surface)).toEqual(['engine band'])
+    await write(surface, 'in_progress')
+    expect(await lines(surface)).toEqual(['0/2 done · Planning…', '◼ Plan', `◼ Build for ${surface}`])
+  }
+})
+
 test('adds its own todo tool only where the built-in task tools are missing', async ($, on) => {
   const cases = [
     { tools: ['Read', 'Bash'], expected: ['todo_write'] },

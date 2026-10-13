@@ -30,3 +30,4 @@ claude plugin install task-list@claude-mods
 - It follows the built-in `TaskCreate`, `TaskUpdate` and `TodoWrite` tools.
 - **Where those tools are missing (the desktop app's Code tab), the mod adds its own, `todo_write`,** so Claude can keep a todo list there too. In the terminal it adds nothing.
 - The checklist hides as soon as every task is done.
+- **`✕` closes the checklist** until the list changes: a new task, or one starting or finishing, brings it back.

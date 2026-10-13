@@ -9,6 +9,10 @@ const BAND_TOP = 5
 
 const catalog = atom({ plugin: 'skill-usage', key: 'catalog' } as const, { skills: [], servers: [], toolServers: {} })
 const counts = atom({ plugin: 'skill-usage', key: 'counts' } as const, { skills: {}, servers: {} })
+const closedAt = atom({ plugin: 'skill-usage', key: 'closedAt' } as const, null)
+
+const totalUses = (used: Counts): number =>
+  [...Object.values(used.skills), ...Object.values(used.servers)].reduce((sum, count) => sum + count, 0)
 
 type Row = { name: string; count: number }
 
@@ -107,8 +111,9 @@ export const register: Register = on => {
     const usedOnly = (rows: readonly Row[]) => rows.filter(row => row.count > 0).slice(0, BAND_TOP)
     const skills = usedOnly(toRows(known.skills, used.skills))
     const servers = usedOnly(toRows(known.servers, used.servers))
-    // Nothing used yet this session: no band at all
-    if (skills.length === 0 && servers.length === 0) {
+    const total = totalUses(used)
+    // Nothing used yet this session, or closed by the person until the next use: no band
+    if ((skills.length === 0 && servers.length === 0) || (await read($, closedAt)) === total) {
       return next(e)
     }
 
@@ -119,22 +124,32 @@ export const register: Register = on => {
     ].filter(group => group.rows.length > 0)
     // Each group with usage is one row of its most used `name count` items; the label opens the pane
     const mine = (
-      <Box key="skill-usage" flexDirection="column">
-        {groups.map(group => (
-          <Box key={group.key} flexDirection="row" flexWrap="wrap" columnGap={2}>
-            <Button
-              key={`open-${group.key}`}
-              label={group.label}
-              plain
-              onPress={() => $.ui.open({ id: PANE, title: PANE_TITLE })}
-            />
-            {group.rows.map(row => (
-              <Text key={row.name}>
-                {row.name} {row.count}
-              </Text>
-            ))}
-          </Box>
-        ))}
+      <Box key="skill-usage" flexDirection="row" justifyContent="space-between" columnGap={2}>
+        <Box key="groups" flexDirection="column" flexShrink={1}>
+          {groups.map(group => (
+            <Box key={group.key} flexDirection="row" flexWrap="wrap" columnGap={2}>
+              <Button
+                key={`open-${group.key}`}
+                label={group.label}
+                plain
+                onPress={() => $.ui.open({ id: PANE, title: PANE_TITLE })}
+              />
+              {group.rows.map(row => (
+                <Text key={row.name}>
+                  {row.name} {row.count}
+                </Text>
+              ))}
+            </Box>
+          ))}
+        </Box>
+        <Button
+          key="close"
+          label="✕"
+          role="dismiss"
+          plain
+          dimColor
+          onPress={() => update($, closedAt, () => total)}
+        />
       </Box>
     )
 

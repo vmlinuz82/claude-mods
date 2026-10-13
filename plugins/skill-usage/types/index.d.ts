@@ -12,6 +12,7 @@ export type Counts = {
 
 declare module 'claude-code' {
   interface PluginState {
-    'skill-usage': { catalog: Catalog; counts: Counts }
+    // closedAt: the total uses when the band was closed; the band stays hidden until a new use
+    'skill-usage': { catalog: Catalog; counts: Counts; closedAt: number | null }
   }
 }

@@ -141,7 +141,7 @@ test('hides until something is used, keeps another mod band on top and steps asi
     const shared = await $.ui.mount({ ...band(), surface })
     // Only the group with usage shows: a Skills row, no MCP row
     expect(await texts(shared)).toEqual(['task band', 'review 1'])
-    expect((await shared.findAll({ type: 'Button' })).map(one => one.key)).toEqual(['open-skills'])
+    expect((await shared.findAll({ type: 'Button' })).map(one => one.key)).toEqual(['open-skills', 'close'])
     const survey = await $.ui.mount({ ...band(true), surface })
     expect(await texts(survey)).toEqual(['task band'])
   }
@@ -163,5 +163,25 @@ test('the Skills and MCP labels open the pane', async ($, on) => {
     await ui.press({ key: 'open-skills' })
     await ui.press({ key: 'open-servers' })
     expect(opened).toEqual(['skill-usage', 'skill-usage'])
+  }
+})
+
+test('the close button hides the band until the next use', async ($, on) => {
+  engine(on)
+  await use($)
+
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ ...band(), surface })
+    expect((await ui.find({ key: 'close' }))?.props.role).toBe('dismiss')
+    await ui.press({ key: 'close' })
+    const closed = await $.ui.mount({ ...band(), surface })
+    expect(await texts(closed)).toEqual([])
+
+    // A Bash call is no skill or MCP use, so the band stays closed; a skill call brings it back
+    await $.tool.call({ tool: 'Bash', command: 'ls' } as never)
+    expect(await texts(await $.ui.mount({ ...band(), surface }))).toEqual([])
+    await callSkill($, 'review')
+    const reopened = await texts(await $.ui.mount({ ...band(), surface }))
+    expect(reopened.some(text => text.startsWith('review '))).toBe(true)
   }
 })
