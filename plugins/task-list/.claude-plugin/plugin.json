@@ -1,0 +1,10 @@
+{
+  "name": "task-list",
+  "version": "0.2.0",
+  "description": "Shows the session's tasks as a CLI-style checklist above the prompt",
+  "author": {
+    "name": "Konstantin Ivanov",
+    "email": "ko.ivanov@gmail.com"
+  },
+  "types": "./types/index.d.ts"
+}

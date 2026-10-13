@@ -1,0 +1,32 @@
+{
+  "name": "claude-mods",
+  "owner": {
+    "name": "Konstantin Ivanov",
+    "email": "ko.ivanov@gmail.com"
+  },
+  "metadata": {
+    "description": "Claude Code mods for the terminal and the desktop app's Code tab"
+  },
+  "plugins": [
+    {
+      "name": "task-list",
+      "description": "Shows the session's tasks as a checklist above the prompt; adds its own todo tool where the built-in one is missing, as in the desktop app",
+      "version": "0.2.0",
+      "author": {
+        "name": "Konstantin Ivanov"
+      },
+      "category": "productivity",
+      "source": "./plugins/task-list"
+    },
+    {
+      "name": "skill-usage",
+      "description": "Shows the skills and MCP servers used in the session above the prompt, with a full table in a pane",
+      "version": "0.1.0",
+      "author": {
+        "name": "Konstantin Ivanov"
+      },
+      "category": "productivity",
+      "source": "./plugins/skill-usage"
+    }
+  ]
+}
