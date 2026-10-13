@@ -1,6 +1,5 @@
 {
   "name": "skill-usage",
-  "version": "0.1.0",
   "description": "Lists every skill and MCP server in the session with how many times each was used",
   "author": {
     "name": "Konstantin Ivanov",

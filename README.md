@@ -31,11 +31,41 @@ claude plugin install skill-usage@claude-mods
 
 Start a new session (or run `/reload-plugins` in a running one) to see them.
 
-## Update and remove
+## Updates
+
+**Every push to `main` is a new version** — the mods carry no `version` number, so Claude Code tracks the latest commit instead.
+
+Claude Code doesn't check marketplaces outside Anthropic's for updates unless you turn it on. Turn it on once, either way:
+
+- In Claude Code: `/plugin` → **Marketplaces** → `claude-mods` → **Enable auto-update**
+- Or in `~/.claude/settings.json`, add `"autoUpdate": true` to the marketplace entry:
+
+  ```json
+  "extraKnownMarketplaces": {
+    "claude-mods": {
+      "source": { "source": "github", "repo": "vmlinuz82/claude-mods" },
+      "autoUpdate": true
+    }
+  }
+  ```
+
+With it on, Claude Code checks a few minutes after your first message in a session and shows `Plugin updated: <name> · Run /reload-plugins to apply`; the new version loads on `/reload-plugins` or the next launch.
+
+Without it, update by hand:
 
 ```bash
 claude plugin marketplace update claude-mods
 ```
+
+```bash
+claude plugin update task-list@claude-mods
+```
+
+```bash
+claude plugin update skill-usage@claude-mods
+```
+
+## Remove
 
 ```bash
 claude plugin uninstall task-list@claude-mods

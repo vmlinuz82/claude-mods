@@ -11,7 +11,6 @@
     {
       "name": "task-list",
       "description": "Shows the session's tasks as a checklist above the prompt; adds its own todo tool where the built-in one is missing, as in the desktop app",
-      "version": "0.2.0",
       "author": {
         "name": "Konstantin Ivanov"
       },
@@ -21,7 +20,6 @@
     {
       "name": "skill-usage",
       "description": "Shows the skills and MCP servers used in the session above the prompt, with a full table in a pane",
-      "version": "0.1.0",
       "author": {
         "name": "Konstantin Ivanov"
       },
