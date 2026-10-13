@@ -262,12 +262,13 @@ export const register: Register = on => {
             {summary}
           </Text>
           <Box key="actions" flexDirection="row" columnGap={2}>
+            <Button key="details" label="Details" plain dimColor onPress={() => $.ui.open({ id: PANE, title: PANE_TITLE })} />
+            {/* Minimize sits next to close at the right edge, as a window's controls do */}
             {minimized ? (
               <Button key="restore" label="+" plain dimColor onPress={() => setMinimized(false)} />
             ) : (
               <Button key="minimize" label="–" plain dimColor onPress={() => setMinimized(true)} />
             )}
-            <Button key="details" label="Details" plain dimColor onPress={() => $.ui.open({ id: PANE, title: PANE_TITLE })} />
             <Button
               key="close"
               label="✕"

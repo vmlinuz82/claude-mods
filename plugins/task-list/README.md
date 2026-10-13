@@ -37,7 +37,7 @@ claude plugin install task-list@claude-mods
 While [superpowers](https://github.com/obra/superpowers) runs a plan with subagent-driven development, the band shows that plan, its tasks and the todos of the task in progress:
 
 ```
-◼ Plan 3 — Frontend Foundation · 1/7 tasks                Details  ✕
+◼ Plan 3 — Frontend Foundation · 1/7 tasks             Details  –  ✕
   ✔ Task 1 Workspace, shared tooling and packages/ui
   ◼ Task 2 packages/api — OpenAPI types and the client · fix round 1
     ◼ Run the type generation
@@ -48,7 +48,7 @@ While [superpowers](https://github.com/obra/superpowers) runs a plan with subage
 **`–`** folds the band to one line, where the work is: `+` unfolds it. It stays folded for the rest of the session; every new session starts unfolded.
 
 ```
-Phase 7 (12/12) \ Plan (3/3) \ Task (3/7) The three app shells · fix round 1      +  Details  ✕
+Phase 7 (12/12) \ Plan (3/3) \ Task (3/7) The three app shells · fix round 1      Details  +  ✕
 ```
 
 Without a phase the line starts at `Plan`; with only a todo list it reads `Todo (2/4) Build`.

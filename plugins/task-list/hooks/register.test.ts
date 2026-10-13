@@ -244,7 +244,7 @@ test('the band shows the running plan with the todos under the task in progress'
       '◼ Plan 3 — Frontend Foundation · 1/3 tasks',
       ...PLAN_3_TASKS,
     ])
-    expect((await ui.findAll({ type: 'Button' })).map(one => one.key)).toEqual(['minimize', 'details', 'close'])
+    expect((await ui.findAll({ type: 'Button' })).map(one => one.key)).toEqual(['details', 'minimize', 'close'])
   }
 })
 
@@ -335,7 +335,7 @@ test('the minimize button folds the band to one breadcrumb line until restored',
     await (await draw(surface)).ui.press({ key: 'minimize' })
     const minimized = await draw(surface)
     expect(minimized.lines).toEqual([BREADCRUMB])
-    expect(minimized.buttons).toEqual(['restore', 'details', 'close'])
+    expect(minimized.buttons).toEqual(['details', 'restore', 'close'])
 
     // It stays folded as the band redraws
     expect((await draw(surface)).lines).toEqual([BREADCRUMB])
@@ -343,7 +343,7 @@ test('the minimize button folds the band to one breadcrumb line until restored',
     await minimized.ui.press({ key: 'restore' })
     const restored = await draw(surface)
     expect(restored.lines).toEqual(['◼ Plan 3 — Frontend Foundation · 1/3 tasks', ...PLAN_3_TASKS])
-    expect(restored.buttons).toEqual(['minimize', 'details', 'close'])
+    expect(restored.buttons).toEqual(['details', 'minimize', 'close'])
   }
 })
 
