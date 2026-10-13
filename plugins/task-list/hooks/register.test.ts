@@ -1,5 +1,8 @@
-import type { RenderElement } from 'claude-code'
+import type { On, RenderElement } from 'claude-code'
 import { expect, test } from 'claude-code/testing'
+
+import type { Files } from './sdd'
+import { memoryFiles, NOW, PHASE_7_DISK, SDD } from './sdd.fixtures'
 
 const SURFACES = ['desktop', 'terminal'] as const
 const band = (isWorking: boolean) =>
@@ -191,4 +194,123 @@ test('draws what its own todo tool writes and refuses a malformed list', async $
     todos: [{ content: 'Plan', status: 'done' }],
   } as never)
   expect(refused.deny).toContain('todos must be')
+})
+
+// Stands in for the engine's disk and session start, with superpowers' files on it
+const superpowersSession = (on: On, files: Files) => {
+  on('session.start', async (_$, e) => e)
+  on('command.register', async (_$, e) => ({ value: { command: e.name } }))
+  on('tool.list', async () => ({ value: [{ name: 'TodoWrite', description: 'todo', mcp: false }] }))
+  on('clock.now', async () => ({ value: NOW }))
+  on('fs.exists', async (_$, e) => ({ value: await files.exists(e.path) }))
+  on('fs.list', async (_$, e) => ({ value: (await files.list(e.path)).map(entry => ({ ...entry, size: 0, isLink: false })) }) as never)
+  on('fs.read', async (_$, e) => {
+    const text = await files.read(e.path)
+    if (text === null) {
+      throw new Error(`ENOENT: ${e.path}`)
+    }
+
+    return { value: text }
+  })
+  on('tool.call', { tool: 'TodoWrite' }, async (_$, e) => ({ result: { oldTodos: [], newTodos: e.todos } }))
+  on('tool.call', { tool: 'Bash' }, async () => ({ result: { stdout: '', stderr: '', interrupted: false } }) as never)
+}
+
+const pane = { plugin: 'task-list', component: 'Pane', requestId: 'task-list', props: { title: 'Plan & tasks', isFocused: false, bodyColumns: 60 } as never } as const
+
+// Superpowers' own todo per task (left out) beside the work inside Task 2
+const TODOS = [
+  { content: 'Task 2: packages/api', status: 'in_progress', activeForm: 'Building packages/api' },
+  { content: 'Run the type generation', status: 'in_progress', activeForm: 'Running the type generation' },
+  { content: 'Wire the session client', status: 'pending', activeForm: 'Wiring the session client' },
+] as const
+
+const PLAN_3_TASKS = [
+  '✔ Task 1 Workspace, shared tooling and packages/ui',
+  '◼ Task 2 packages/api — OpenAPI types and the session-aware client · fix round 1',
+  '◼ Run the type generation',
+  '◻ Wire the session client',
+  '◻ Task 3 The three app shells',
+]
+
+test('the band shows the running plan with the todos under the task in progress', async ($, on) => {
+  superpowersSession(on, memoryFiles(PHASE_7_DISK))
+  await $.session.start({ cwd: '/repo', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'TodoWrite', todos: [...TODOS] })
+
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ ...band(true), surface })
+    expect((await ui.findAll({ type: 'Text' })).map(one => one.text)).toEqual([
+      '◼ Plan 3 — Frontend Foundation · 1/3 tasks',
+      ...PLAN_3_TASKS,
+    ])
+    expect((await ui.findAll({ type: 'Button' })).map(one => one.key)).toEqual(['details', 'close'])
+  }
+})
+
+test('the band follows the ledger as superpowers appends to it', async ($, on) => {
+  const disk = { ...PHASE_7_DISK }
+  superpowersSession(on, memoryFiles(disk))
+  on('ui.render', { component: 'AbovePrompt' }, ($, e) => {
+    const { Text } = $.ui.resolve(e)
+
+    return h(Text, {}, 'engine band') as RenderElement
+  })
+  await $.session.start({ cwd: '/repo', surface: 'desktop', isInteractive: true })
+  const ledger = `${SDD}/2026-10-13-phase7-plan3-frontend/progress.md`
+  const lines = async () => (await (await $.ui.mount({ ...band(true), surface: 'desktop' })).findAll({ type: 'Text' })).map(one => one.text)
+
+  disk[ledger] = { text: `${disk[ledger]?.text}\nTask 2: complete (a..b)\nTask 3: dispatched (sonnet)`, mtimeMs: 400 }
+  // A command that doesn't touch the ledger reads nothing again
+  await $.tool.call({ tool: 'Bash', command: 'ls' } as never)
+  expect((await lines())[0]).toBe('◼ Plan 3 — Frontend Foundation · 1/3 tasks')
+
+  await $.tool.call({ tool: 'Bash', command: 'echo "Task 3: dispatched" >> $W/progress.md' } as never)
+  expect(await lines()).toEqual([
+    '◼ Plan 3 — Frontend Foundation · 2/3 tasks',
+    '✔ Task 1 Workspace, shared tooling and packages/ui',
+    '✔ Task 2 packages/api — OpenAPI types and the session-aware client',
+    '◼ Task 3 The three app shells · implementing',
+  ])
+
+  // Every task complete: the plan leaves the band
+  disk[ledger] = { text: `${disk[ledger]?.text}\nTask 3: complete (b..c)`, mtimeMs: 500 }
+  await $.tool.call({ tool: 'Bash', command: 'echo "Task 3: complete" >> $W/progress.md' } as never)
+  expect(await lines()).toEqual(['engine band'])
+})
+
+test('the pane shows every phase, the running phase down to its tasks and todos', async ($, on) => {
+  superpowersSession(on, memoryFiles(PHASE_7_DISK))
+  const opened: string[] = []
+  on('ui.open', async (_$, e) => {
+    opened.push(e.id)
+
+    return { value: { isPlaced: true } } as never
+  })
+  await $.session.start({ cwd: '/repo', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'TodoWrite', todos: [...TODOS] })
+
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ ...pane, surface })
+    expect((await ui.findAll({ type: 'Text' })).map(one => one.text)).toEqual([
+      'Phase 5 · 1/1 plans done',
+      '✔ Alert Emails · 1/1 tasks',
+      'Phase 7 · 2/4 plans done',
+      '✔ Plan 1 — Admin Access · 2/2 tasks',
+      '✔ Task 1 Roles',
+      '✔ Task 2 Audit log',
+      '✔ Plan 2 — User Tools · 1/1 tasks',
+      '✔ Task 1 Blocking',
+      '◼ Plan 3 — Frontend Foundation · 1/3 tasks',
+      ...PLAN_3_TASKS,
+      '◻ Plan 4 — Later · 0/1 tasks',
+      '◻ Task 1 Next',
+    ])
+
+    // Details on the band opens it
+    opened.length = 0
+    const strip = await $.ui.mount({ ...band(true), surface })
+    await strip.press({ key: 'details' })
+    expect(opened).toEqual(['task-list'])
+  }
 })

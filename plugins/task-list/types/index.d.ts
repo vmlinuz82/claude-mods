@@ -13,10 +13,43 @@ export type Todo = {
   activeForm?: string
 }
 
+// One task of a superpowers plan, its status from the subagent-driven-development ledger
+export type PlanTask = {
+  n: number
+  title: string
+  status: TaskStatus
+  // The latest ledger step of a task in progress: implementing, review, fix round 2…
+  step?: string
+}
+
+// One plan in the plans folder, with its tasks as its own ledger has them
+export type PlanRow = {
+  name: string
+  status: TaskStatus
+  isCurrent: boolean
+  tasks: PlanTask[]
+}
+
+// The plans of one phase, in file name order; phase null holds the plans without a phase
+export type PhaseGroup = {
+  phase: string | null
+  plans: PlanRow[]
+}
+
+// The plan of the newest superpowers ledger and every plan beside it
+export type PlanView = {
+  // false once every task of the plan is complete: the band hides it, the pane keeps it
+  isRunning: boolean
+  phase: string | null
+  name: string
+  tasks: PlanTask[]
+  groups: PhaseGroup[]
+}
+
 declare module 'claude-code' {
   interface PluginState {
-    // closedOn: the list as it was when the band was closed; the band stays hidden until it changes
-    'task-list': { tasks: Task[]; closedOn: string | null }
+    // closedOn: what the band showed when it was closed; the band stays hidden until it changes
+    'task-list': { tasks: Task[]; closedOn: string | null; plan: PlanView | null; cwd: string | null }
   }
 
   interface McpToolInputs {
