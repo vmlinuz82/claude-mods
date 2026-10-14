@@ -43,13 +43,13 @@ test('parseLedger names each kind of step', () => {
   }
 })
 
-test('splitTitle finds the phase and the plan name in each title style', () => {
+test('splitTitle finds the phase and the plan name in each title style; a sub-phase joins its main phase', () => {
   const cases: [string, { phase: string | null; name: string }][] = [
     ['Phase 7 · Plan 3 — Frontend Foundation Implementation Plan', { phase: '7', name: 'Plan 3 — Frontend Foundation' }],
     ['PoEvtini.bg Phase 4 — Price Checks and Watch Expiry Implementation Plan', { phase: '4', name: 'Price Checks and Watch Expiry' }],
-    ['PoEvtini.bg Phase 3e — Affiliate Links — Implementation Plan', { phase: '3e', name: 'Affiliate Links' }],
+    ['PoEvtini.bg Phase 3e — Affiliate Links — Implementation Plan', { phase: '3', name: '3e · Affiliate Links' }],
     ['POEVTINI Infra & Foundation (Phase 1) Implementation Plan', { phase: '1', name: 'POEVTINI Infra & Foundation' }],
-    ['POEVTINI Repo Split (Phase 1.5) Implementation Plan', { phase: '1.5', name: 'POEVTINI Repo Split' }],
+    ['POEVTINI Repo Split (Phase 1.5) Implementation Plan', { phase: '1', name: '1.5 · POEVTINI Repo Split' }],
     ['Anketi Foundation Implementation Plan', { phase: null, name: 'Anketi Foundation' }],
   ]
 
@@ -231,4 +231,26 @@ test('breadcrumb places the task in its plan and the plan in its phase', async (
     'Phase 7 (2/2) \\ Plan (3/4) \\ Task (2/3) packages/api — OpenAPI types and the session-aware client · fix round 1',
   )
   expect(unphased && breadcrumb(unphased)).toBe('Plan (1/2) \\ Task (2/2) Models')
+})
+
+test('sub-phases join their main phase and phases count in number order', async () => {
+  // File dates put Phase 2 before Phase 1.5, and Phase 3b before Phase 3a
+  const disk = {
+    [`${PLANS}/2026-10-06-infra.md`]: { text: '# POEVTINI Infra & Foundation (Phase 1) Implementation Plan\n### Task 1: Compose' },
+    [`${PLANS}/2026-10-07-a-phase2.md`]: { text: '# POEVTINI Phase 2 — Product Inspection Implementation Plan\n### Task 1: Inspect' },
+    [`${PLANS}/2026-10-07-b-split.md`]: { text: '# POEVTINI Repo Split (Phase 1.5) Implementation Plan\n### Task 1: Split' },
+    [`${PLANS}/2026-10-08-phase3b.md`]: { text: '# PoEvtini.bg Phase 3b — Watches Implementation Plan\n### Task 1: Watch' },
+    [`${PLANS}/2026-10-09-phase3a.md`]: { text: '# PoEvtini.bg Phase 3a — Accounts Implementation Plan\n### Task 1: Sign up\n### Task 2: Log in' },
+    [`${SDD}/2026-10-09-phase3a/progress.md`]: {
+      text: '# SDD ledger — plan: docs/superpowers/plans/2026-10-09-phase3a.md\nTask 1: complete (a..b)\nTask 2: dispatched',
+    },
+  }
+  const view = await loadPlanView(memoryFiles(disk), '/repo', NOW)
+
+  expect(view?.groups.map(group => [group.phase, group.plans.map(row => row.name)])).toEqual([
+    ['1', ['POEVTINI Infra & Foundation', '1.5 · POEVTINI Repo Split']],
+    ['2', ['Product Inspection']],
+    ['3', ['3b · Watches', '3a · Accounts']],
+  ])
+  expect(view && breadcrumb(view)).toBe('Phase 3 (3/3) \\ Plan (2/2) \\ Task (2/2) Log in · implementing')
 })

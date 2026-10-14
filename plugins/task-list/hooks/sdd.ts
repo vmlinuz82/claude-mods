@@ -98,16 +98,23 @@ export const parseLedger = (text: string): Ledger => {
   return { plan, tasks }
 }
 
+// A sub-phase (3e, 1.5) belongs to its main phase (3, 1); its own label stays at the front of the name
+const inMainPhase = (label: string, name: string): { phase: string; name: string } => {
+  const main = label.match(/^\d+/)?.[0] ?? label
+
+  return { phase: main, name: label === main ? name : `${label} · ${name}` }
+}
+
 export const splitTitle = (title: string): { phase: string | null; name: string } => {
   const bare = title.replace(IMPLEMENTATION_PLAN, '')
   const inParens = bare.match(PHASE_IN_PARENS)
-  if (inParens) {
-    return { phase: inParens[1] ?? null, name: bare.replace(PHASE_IN_PARENS, '').trim() }
+  if (inParens?.[1]) {
+    return inMainPhase(inParens[1], bare.replace(PHASE_IN_PARENS, '').trim())
   }
 
   const prefixed = bare.match(PHASE_PREFIX)
-  if (prefixed) {
-    return { phase: prefixed[1] ?? null, name: (prefixed[2] ?? '').trim() }
+  if (prefixed?.[1]) {
+    return inMainPhase(prefixed[1], (prefixed[2] ?? '').trim())
   }
 
   return { phase: null, name: bare.trim() }
@@ -224,7 +231,7 @@ const allPlans = async (
   return rows
 }
 
-// Plans grouped by phase in the order the phases first appear; plans without one share a group
+// Plans grouped by phase; plans without one share a group
 const byPhase = (rows: readonly (PlanRow & { phase: string | null })[]): PhaseGroup[] => {
   const groups: PhaseGroup[] = []
   for (const { phase, ...row } of rows) {
@@ -236,7 +243,8 @@ const byPhase = (rows: readonly (PlanRow & { phase: string | null })[]): PhaseGr
     groups.push({ phase, plans: [row] })
   }
 
-  return groups
+  // Phases in number order whatever the files' dates; the plans without a phase last
+  return groups.sort((a, b) => (a.phase === null ? Infinity : Number(a.phase)) - (b.phase === null ? Infinity : Number(b.phase)))
 }
 
 // A plan whose ledger hasn't changed for a day is left, not running

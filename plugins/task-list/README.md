@@ -45,10 +45,10 @@ While [superpowers](https://github.com/obra/superpowers) runs a plan with subage
   ◻ Task 3 The three app shells
 ```
 
-**`–`** folds the band to one line, where the work is: `□` unfolds it. It stays folded for the rest of the session; every new session starts unfolded.
+**`–`** folds the band to one line, where the work is: `🗖` unfolds it. It stays folded for the rest of the session; every new session starts unfolded.
 
 ```
-Phase 7 (12/12) \ Plan (3/3) \ Task (3/7) The three app shells · fix round 1      Details  □ ✕
+Phase 7 (7/7) \ Plan (3/3) \ Task (3/7) The three app shells · fix round 1      Details  🗖 ✕
 ```
 
 Without a phase the line starts at `Plan`; with only a todo list it reads `Todo (2/4) Build`.
@@ -57,7 +57,7 @@ Without a phase the line starts at `Plan`; with only a todo list it reads `Todo 
 
 - It reads superpowers' own files: the plans (`docs/superpowers/plans/*.md`, `### Task N:` headings) and each plan's ledger (`.superpowers/sdd/<plan>/progress.md`). Superpowers itself is unchanged.
 - **The running plan is the one whose ledger was written last,** found in the session's folder or the nearest parent with a `.superpowers` folder. A task is done at its `Task N: complete` line; a task in progress shows its latest step (implementing, review, fix round 2…).
-- **Phases come from the plan titles:** `Phase 7 · Plan 3 — …`, `… Phase 4 — …` and `… (Phase 1.5)` all work. Plans without a phase are listed together.
+- **Phases come from the plan titles:** `Phase 7 · Plan 3 — …`, `… Phase 4 — …` and `… (Phase 1.5)` all work. A sub-phase joins its main phase (3a–3e are Phase 3, 1.5 is Phase 1) and keeps its label in the plan name: `3e · Affiliate Links`. Plans without a phase are listed together.
 - **Superpowers' workspaces are scratch and get cleaned:** a plan with no ledger left counts as done when it comes before the running plan (by file name), and to do after it. Ledgers from before superpowers' `# SDD ledger — plan:` first line are read the same way.
 - The band shows a plan only while it has unfinished tasks and its ledger changed in the last day; the pane keeps showing the tree after that.
 - Superpowers also makes a todo per plan task: those are left out, so each task shows once.
