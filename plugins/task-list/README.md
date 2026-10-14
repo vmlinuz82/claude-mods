@@ -30,14 +30,14 @@ claude plugin install task-list@claude-mods
 - It follows the built-in `TaskCreate`, `TaskUpdate` and `TodoWrite` tools.
 - **Where those tools are missing (the desktop app's Code tab), the mod adds its own, `todo_write`,** so Claude can keep a todo list there too. In the terminal it adds nothing.
 - The checklist hides as soon as every task is done.
-- **`✕` closes the checklist** until the list changes: a new task, or one starting or finishing, brings it back.
+- **`×` closes the checklist** until the list changes: a new task, or one starting or finishing, brings it back.
 
 ## Superpowers plans
 
 While [superpowers](https://github.com/obra/superpowers) runs a plan with subagent-driven development, the band shows that plan, its tasks and the todos of the task in progress:
 
 ```
-◼ Plan 3 — Frontend Foundation · 1/7 tasks             Details  🗕 ✕
+◼ Plan 3 — Frontend Foundation · 1/7 tasks             Details  – ×
   ✔ Task 1 Workspace, shared tooling and packages/ui
   ◼ Task 2 packages/api — OpenAPI types and the client · fix round 1
     ◼ Run the type generation
@@ -45,10 +45,10 @@ While [superpowers](https://github.com/obra/superpowers) runs a plan with subage
   ◻ Task 3 The three app shells
 ```
 
-**`🗕`** folds the band to one line, where the work is: `🗖` unfolds it. It stays folded for the rest of the session; every new session starts unfolded.
+**`–`** folds the band to one line, where the work is: `□` unfolds it. It stays folded for the rest of the session; every new session starts unfolded.
 
 ```
-Phase 7 (7/7) \ Plan (3/3) \ Task (3/7) The three app shells · fix round 1      Details  🗖 ✕
+Phase 7 (7/7) \ Plan (3/3) \ Task (3/7) The three app shells · fix round 1      Details  □ ×
 ```
 
 Without a phase the line starts at `Plan`; with only a todo list it reads `Todo (2/4) Build`.

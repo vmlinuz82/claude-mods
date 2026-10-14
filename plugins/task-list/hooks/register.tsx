@@ -266,13 +266,13 @@ export const register: Register = on => {
             {/* Minimize and close sit together at the right edge, as a window's controls do */}
             <Box key="window" flexDirection="row" columnGap={1}>
               {minimized ? (
-                <Button key="restore" label="🗖" plain dimColor onPress={() => setMinimized(false)} />
+                <Button key="restore" label="□" plain dimColor onPress={() => setMinimized(false)} />
               ) : (
-                <Button key="minimize" label="🗕" plain dimColor onPress={() => setMinimized(true)} />
+                <Button key="minimize" label="–" plain dimColor onPress={() => setMinimized(true)} />
               )}
               <Button
                 key="close"
-                label="✕"
+                label="×"
                 role="dismiss"
                 plain
                 dimColor

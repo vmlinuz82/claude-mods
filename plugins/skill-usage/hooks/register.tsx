@@ -144,7 +144,7 @@ export const register: Register = on => {
         </Box>
         <Button
           key="close"
-          label="✕"
+          label="×"
           role="dismiss"
           plain
           dimColor
