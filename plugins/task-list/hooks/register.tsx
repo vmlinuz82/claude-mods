@@ -268,7 +268,7 @@ export const register: Register = on => {
               {minimized ? (
                 <Button key="restore" label="🗖" plain dimColor onPress={() => setMinimized(false)} />
               ) : (
-                <Button key="minimize" label="–" plain dimColor onPress={() => setMinimized(true)} />
+                <Button key="minimize" label="🗕" plain dimColor onPress={() => setMinimized(true)} />
               )}
               <Button
                 key="close"
