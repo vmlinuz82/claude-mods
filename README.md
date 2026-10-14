@@ -7,6 +7,14 @@ Two Claude Code mods, installed separately. Both work in the terminal and in the
 | [`task-list`](plugins/task-list/README.md) | The session's tasks as a checklist above the prompt |
 | [`skill-usage`](plugins/skill-usage/README.md) | The skills and MCP servers used in the session, with a full table in a pane |
 
+### `task-list`
+
+![The task list above the prompt](docs/task-list.png)
+
+### `skill-usage`
+
+![The skills and MCP servers used in the session, above the prompt](docs/skill-usage-band.png)
+
 ## Prerequisites
 
 - Claude Code **2.1.289** or newer (`claude --version`). Older builds don't load mods; `claude update` fixes that. The desktop app ships its own build, so only a terminal `claude` is likely to be behind.

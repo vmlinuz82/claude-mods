@@ -2,13 +2,9 @@
 
 Draws the session's tasks as a checklist above the prompt:
 
-```
-1/4 done · Computing the response rate…
-✔ Read the responses screen      (dimmed, struck through)
-◼ Compute the response rate      (bold, in progress)
-◻ Add the KPI card
-◻ Write tests
-```
+![The task list above the prompt in the desktop app](../../docs/task-list.png)
+
+The first line counts the finished tasks and says what Claude is doing now. A finished task is dimmed and struck through, the one in progress is bold, and the rest wait with an empty box.
 
 ## Install
 

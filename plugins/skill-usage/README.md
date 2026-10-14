@@ -4,10 +4,9 @@ Shows which skills and MCP servers were used in the current session and how many
 
 Above the prompt, the five most used of each:
 
-```
-Skills  plugin-authoring 2  review 1
-MCP     workbench-gitlab 4  workbench-jira 1
-```
+![The skills and MCP servers used in the session, above the prompt in the desktop app](../../docs/skill-usage-band.png)
+
+Each line lists what was used, most used first, with how many times. `Skills` and `MCP` are buttons that open the full table.
 
 ## Install
 
