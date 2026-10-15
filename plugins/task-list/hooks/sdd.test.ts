@@ -254,3 +254,22 @@ test('sub-phases join their main phase and phases count in number order', async 
   ])
   expect(view && breadcrumb(view)).toBe('Phase 3 (3/3) \\ Plan (2/2) \\ Task (2/2) Log in · implementing')
 })
+
+test('parseLedger reads ledger lines written as list items', () => {
+  const ledger = [
+    '# SDD ledger — plan: docs/superpowers/plans/2026-10-15-poevtini-phase7-plan4-backoffice.md',
+    '## Progress',
+    '- Task 1: dispatched (BASE backend 08236d5, frontend 2f37afa)',
+    '- Task 1: complete (backend 08236d5..d733a86, review clean)',
+    '* Task 2: dispatched (BASE frontend 5433390)',
+    '- Task 2: fix round 1/5 (8 addressed, 0 open; commits 5d66e0d..ed80d9b)',
+    '  - Task 3: implementer DONE 24ed346 (123 tests)',
+    '- Ruling: accept phpdocumentor/type-resolver — cost if wrong: one extra library',
+  ].join('\n')
+
+  expect(parseLedger(ledger).tasks).toEqual({
+    1: { isComplete: true, step: 'implementing' },
+    2: { isComplete: false, step: 'fix round 1' },
+    3: { isComplete: false, step: 'implemented' },
+  })
+})

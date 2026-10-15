@@ -17,7 +17,8 @@ export type Files = {
 
 const TASK_HEADING = /^#+\s+Task\s+(\d+)\b[:.\s—–-]*(.*)$/
 const LEDGER_IDENTITY = /^# SDD ledger — plan:\s*(.+?)\s*$/
-const LEDGER_TASK = /^Task\s+(\d+)\b(.*)$/
+// A ledger line, bare or as a list item (`- Task 3: …`): controllers write it both ways
+const LEDGER_TASK = /^\s*(?:[-*+]\s+)?Task\s+(\d+)\b(.*)$/
 const PHASE_IN_PARENS = /\s*\(Phase\s+([0-9][\w.]*)\)/
 const PHASE_PREFIX = /^.*?\bPhase\s+([0-9][\w.]*)\s*[·—–:-]?\s*(.*)$/
 const IMPLEMENTATION_PLAN = /[\s—–-]*Implementation Plan\s*$/
