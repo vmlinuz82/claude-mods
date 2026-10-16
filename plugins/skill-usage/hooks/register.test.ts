@@ -141,6 +141,9 @@ test('hides until something is used, keeps another mod band on top and steps asi
     const shared = await $.ui.mount({ ...band(), surface })
     // Only the group with usage shows: a Skills row, no MCP row
     expect(await texts(shared)).toEqual(['task band', 'review 1'])
+    // Each band framed like the prompt box, so the two read apart
+    const frames = (await shared.findAll({ type: 'Box' })).filter(box => box.props.borderStyle === 'round')
+    expect(frames).toHaveLength(2)
     expect((await shared.findAll({ type: 'Button' })).map(one => one.key)).toEqual(['open-skills', 'close'])
     const survey = await $.ui.mount({ ...band(true), surface })
     expect(await texts(survey)).toEqual(['task band'])

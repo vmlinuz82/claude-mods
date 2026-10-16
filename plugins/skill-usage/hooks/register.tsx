@@ -159,10 +159,15 @@ export const register: Register = on => {
       return mine
     }
 
+    // Two bands stacked: each framed like the prompt box, a row apart, so they read as two
     return (
-      <Box flexDirection="column">
-        {below}
-        {mine}
+      <Box flexDirection="column" rowGap={1}>
+        <Box key="upper" flexDirection="column" borderStyle="round" borderColor="promptBorder" paddingX={1}>
+          {below}
+        </Box>
+        <Box key="lower" flexDirection="column" borderStyle="round" borderColor="promptBorder" paddingX={1}>
+          {mine}
+        </Box>
       </Box>
     )
   })

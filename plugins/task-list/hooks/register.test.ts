@@ -389,5 +389,8 @@ test('the band keeps another mod band drawn beneath it, under the task list', { 
       '◼ Build',
       'other band',
     ])
+    // Each band framed like the prompt box, so the two read apart
+    const frames = (await ui.findAll({ type: 'Box' })).filter(box => box.props.borderStyle === 'round')
+    expect(frames.map(box => box.props.borderColor)).toEqual(['promptBorder', 'promptBorder'])
   }
 })
