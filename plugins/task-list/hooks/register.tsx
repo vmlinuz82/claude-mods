@@ -255,8 +255,8 @@ export const register: Register = on => {
         ? `${done}/${list.length} done${active?.activeForm ? ` · ${active.activeForm}…` : ''}`
         : `${MARK.in_progress} ${planSummary(running.name, running.tasks)}`
 
-    return (
-      <Box flexDirection="column">
+    const mine = (
+      <Box key="task-list" flexDirection="column">
         <Box key="head" flexDirection="row" justifyContent="space-between" columnGap={2}>
           <Text key="summary" bold={running !== null} dimColor={running === null} wrap="truncate-end">
             {summary}
@@ -282,6 +282,20 @@ export const register: Register = on => {
           </Box>
         </Box>
         {!minimized && (running === null ? todoLines($, e, list) : taskTree($, e, running.tasks, hasTodos ? list : []))}
+      </Box>
+    )
+
+    // Plugins of one tier nest in no fixed order: another mod's band beneath this one (skill-usage)
+    // stays, under the task list; the engine's own placeholder is left out
+    const below = await next(e)
+    if (below.type === 'engine') {
+      return mine
+    }
+
+    return (
+      <Box flexDirection="column">
+        {mine}
+        {below}
       </Box>
     )
   })

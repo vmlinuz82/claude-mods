@@ -12,7 +12,12 @@ const band = (isWorking: boolean) =>
     props: { hasSurvey: false, isWorking, maxRows: 20, bodyColumns: 80 } as never,
   }) as const
 
+// Stands in for the engine beneath the plugins: its placeholder, drawn when no plugin draws a band
+const engineBand = (on: On) =>
+  on('ui.render', { component: 'AbovePrompt' }, async () => ({ type: 'engine', ref: 0 }) as RenderElement)
+
 test('tracks TaskCreate / TaskUpdate and draws the checklist', async ($, on) => {
+  engineBand(on)
   let next = 0
   on('tool.call', { tool: 'TaskCreate' }, async () => ({
     result: { task: { id: String(++next), subject: 'x' } },
@@ -37,6 +42,7 @@ test('tracks TaskCreate / TaskUpdate and draws the checklist', async ($, on) => 
 })
 
 test('mirrors TodoWrite lists', async ($, on) => {
+  engineBand(on)
   on('tool.call', { tool: 'TodoWrite' }, async (_$, e) => ({
     result: { oldTodos: [], newTodos: e.todos },
   }))
@@ -62,11 +68,7 @@ test('steps aside once every task is done, working or not', async ($, on) => {
   on('tool.call', { tool: 'TodoWrite' }, async (_$, e) => ({
     result: { oldTodos: [], newTodos: e.todos },
   }))
-  on('ui.render', { component: 'AbovePrompt' }, ($, e) => {
-    const { Text } = $.ui.resolve(e)
-
-    return h(Text, {}, 'engine band') as RenderElement
-  })
+  engineBand(on)
 
   await $.tool.call({
     tool: 'TodoWrite',
@@ -75,18 +77,14 @@ test('steps aside once every task is done, working or not', async ($, on) => {
 
   for (const surface of SURFACES) {
     const working = await $.ui.mount({ ...band(true), surface })
-    expect((await working.findAll({ type: 'Text' })).map(one => one.text)).toEqual(['engine band'])
+    expect((await working.findAll({ type: 'Text' })).map(one => one.text)).toEqual([])
     const idle = await $.ui.mount({ ...band(false), surface })
-    expect((await idle.findAll({ type: 'Text' })).map(one => one.text)).toEqual(['engine band'])
+    expect((await idle.findAll({ type: 'Text' })).map(one => one.text)).toEqual([])
   }
 })
 
 test('/task-demo fills the band and /task-demo clear empties it', async ($, on) => {
-  on('ui.render', { component: 'AbovePrompt' }, ($, e) => {
-    const { Text } = $.ui.resolve(e)
-
-    return h(Text, {}, 'engine band') as RenderElement
-  })
+  engineBand(on)
 
   await $.command.run({ command: 'task-demo', args: '', origin: 'user' } as never)
   const ui = await $.ui.mount({ ...band(false), surface: 'desktop' })
@@ -100,18 +98,14 @@ test('/task-demo fills the band and /task-demo clear empties it', async ($, on) 
 
   await $.command.run({ command: 'task-demo', args: 'clear', origin: 'user' } as never)
   const cleared = await $.ui.mount({ ...band(false), surface: 'desktop' })
-  expect((await cleared.findAll({ type: 'Text' })).map(one => one.text)).toEqual(['engine band'])
+  expect((await cleared.findAll({ type: 'Text' })).map(one => one.text)).toEqual([])
 })
 
 test('the close button hides the band until the list changes', async ($, on) => {
   on('tool.call', { tool: 'TodoWrite' }, async (_$, e) => ({
     result: { oldTodos: [], newTodos: e.todos },
   }))
-  on('ui.render', { component: 'AbovePrompt' }, ($, e) => {
-    const { Text } = $.ui.resolve(e)
-
-    return h(Text, {}, 'engine band') as RenderElement
-  })
+  engineBand(on)
   // A list of its own per surface, so one surface's close never carries into the next
   const write = (surface: (typeof SURFACES)[number], status: 'pending' | 'in_progress') =>
     $.tool.call({
@@ -132,11 +126,11 @@ test('the close button hides the band until the list changes', async ($, on) => 
     const ui = await $.ui.mount({ ...band(true), surface })
     expect((await ui.find({ key: 'close' }))?.props.role).toBe('dismiss')
     await ui.press({ key: 'close' })
-    expect(await lines(surface)).toEqual(['engine band'])
+    expect(await lines(surface)).toEqual([])
 
     // The same list written again stays closed; a changed one brings the band back
     await write(surface, 'pending')
-    expect(await lines(surface)).toEqual(['engine band'])
+    expect(await lines(surface)).toEqual([])
     await write(surface, 'in_progress')
     expect(await lines(surface)).toEqual(['0/2 done · Planning…', '◼ Plan', `◼ Build for ${surface}`])
   }
@@ -168,7 +162,8 @@ test('adds its own todo tool only where the built-in task tools are missing', as
   }
 })
 
-test('draws what its own todo tool writes and refuses a malformed list', async $ => {
+test('draws what its own todo tool writes and refuses a malformed list', async ($, on) => {
+  engineBand(on)
   const written = await $.tool.call({
     tool: 'mcp__task-list__todo_write',
     todos: [
@@ -198,6 +193,7 @@ test('draws what its own todo tool writes and refuses a malformed list', async $
 
 // Stands in for the engine's disk and session start, with superpowers' files on it
 const superpowersSession = (on: On, files: Files) => {
+  engineBand(on)
   on('session.start', async (_$, e) => e)
   on('command.register', async (_$, e) => ({ value: { command: e.name } }))
   on('tool.list', async () => ({ value: [{ name: 'TodoWrite', description: 'todo', mcp: false }] }))
@@ -251,11 +247,6 @@ test('the band shows the running plan with the todos under the task in progress'
 test('the band follows the ledger as superpowers appends to it', async ($, on) => {
   const disk = { ...PHASE_7_DISK }
   superpowersSession(on, memoryFiles(disk))
-  on('ui.render', { component: 'AbovePrompt' }, ($, e) => {
-    const { Text } = $.ui.resolve(e)
-
-    return h(Text, {}, 'engine band') as RenderElement
-  })
   await $.session.start({ cwd: '/repo', surface: 'desktop', isInteractive: true })
   const ledger = `${SDD}/2026-10-13-phase7-plan3-frontend/progress.md`
   const lines = async () => (await (await $.ui.mount({ ...band(true), surface: 'desktop' })).findAll({ type: 'Text' })).map(one => one.text)
@@ -276,7 +267,7 @@ test('the band follows the ledger as superpowers appends to it', async ($, on) =
   // Every task complete: the plan leaves the band
   disk[ledger] = { text: `${disk[ledger]?.text}\nTask 3: complete (b..c)`, mtimeMs: 500 }
   await $.tool.call({ tool: 'Bash', command: 'echo "Task 3: complete" >> $W/progress.md' } as never)
-  expect(await lines()).toEqual(['engine band'])
+  expect(await lines()).toEqual([])
 })
 
 test('the pane shows every phase, the running phase down to its tasks and todos', async ($, on) => {
@@ -363,5 +354,40 @@ test('a minimized todo list shows the todo in progress and its place', async ($,
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ ...band(true), surface })
     expect((await ui.findAll({ type: 'Text' })).map(one => one.text)).toEqual(['Todo (2/3) Build'])
+  }
+})
+
+// Another mod's band (skill-usage) beneath this one: plugins of one tier nest in no fixed order,
+// so this mod must keep what lies beneath when it draws
+const OTHER_BAND = {
+  name: 'other-band',
+  tier: 'append',
+  register: (on: On) => {
+    on('ui.render', { component: 'AbovePrompt' }, ($, e) => {
+      const { Text } = $.ui.resolve(e)
+
+      return h(Text, {}, 'other band') as RenderElement
+    })
+  },
+} as const
+
+test('the band keeps another mod band drawn beneath it, under the task list', { plugins: [OTHER_BAND] }, async ($, on) => {
+  on('tool.call', { tool: 'TodoWrite' }, async (_$, e) => ({ result: { oldTodos: [], newTodos: e.todos } }))
+  await $.tool.call({
+    tool: 'TodoWrite',
+    todos: [
+      { content: 'Plan', status: 'completed', activeForm: 'Planning' },
+      { content: 'Build', status: 'in_progress', activeForm: 'Building' },
+    ],
+  })
+
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ ...band(true), surface })
+    expect((await ui.findAll({ type: 'Text' })).map(one => one.text)).toEqual([
+      '1/2 done · Building…',
+      '✔ Plan',
+      '◼ Build',
+      'other band',
+    ])
   }
 })
