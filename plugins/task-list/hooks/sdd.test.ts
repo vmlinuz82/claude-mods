@@ -273,3 +273,32 @@ test('parseLedger reads ledger lines written as list items', () => {
     3: { isComplete: false, step: 'implemented' },
   })
 })
+
+test('an open task with a later task started is on hold; the breadcrumb follows the newest task', async () => {
+  const ledger = parseLedger(
+    [
+      '# SDD ledger — plan: docs/superpowers/plans/x.md',
+      'Task 1: complete (a..b)',
+      'Task 2 review: spec ❌ / Changes needed (0C/2I/5M)',
+      'Ruling: Task 2 I1 deferred to after Task 3',
+      'Task 3: dispatched (BASE backend 9a956ff)',
+    ].join('\n'),
+  )
+  const headings = [
+    { n: 1, title: 'Backend' },
+    { n: 2, title: 'Smoke test' },
+    { n: 3, title: 'Clicks per product' },
+    { n: 4, title: 'Docs' },
+  ]
+
+  expect(planTasks(headings, ledger)).toEqual([
+    { n: 1, title: 'Backend', status: 'completed' },
+    { n: 2, title: 'Smoke test', status: 'on_hold', step: 'review' },
+    { n: 3, title: 'Clicks per product', status: 'in_progress', step: 'implementing' },
+    { n: 4, title: 'Docs', status: 'pending' },
+  ])
+
+  const tasks = planTasks(headings, ledger)
+  const view = { isRunning: true, phase: null, name: 'X', tasks, groups: [{ phase: null, plans: [{ name: 'X', status: 'in_progress' as const, isCurrent: true, tasks }] }] }
+  expect(breadcrumb(view)).toBe('Plan (1/1) \\ Task (3/4) Clicks per product · implementing')
+})

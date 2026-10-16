@@ -17,7 +17,8 @@ export type Todo = {
 export type PlanTask = {
   n: number
   title: string
-  status: TaskStatus
+  // on_hold: started and unfinished while a later task is already under way
+  status: TaskStatus | 'on_hold'
   // The latest ledger step of a task in progress: implementing, review, fix round 2…
   step?: string
 }

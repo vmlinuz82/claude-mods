@@ -394,3 +394,33 @@ test('the band keeps another mod band drawn beneath it, under the task list', { 
     expect(frames.map(box => box.props.borderColor)).toEqual(['promptBorder', 'promptBorder'])
   }
 })
+
+test('a task left open behind a newer one shows on hold', async ($, on) => {
+  const disk = {
+    ...PHASE_7_DISK,
+    [`${SDD}/2026-10-13-phase7-plan3-frontend/progress.md`]: {
+      text: [
+        '# SDD ledger — plan: docs/superpowers/plans/2026-10-13-phase7-plan3-frontend.md',
+        'Task 1: complete (a..b)',
+        'Task 2 review: spec ❌ / Changes needed',
+        'Task 3: dispatched (BASE frontend 3d45ecc)',
+      ].join('\n'),
+      mtimeMs: 300,
+    },
+  }
+  superpowersSession(on, memoryFiles(disk))
+  await $.session.start({ cwd: '/repo', surface: 'desktop', isInteractive: true })
+
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ ...band(true), surface })
+    const texts = await ui.findAll({ type: 'Text' })
+    expect(texts.map(one => one.text)).toEqual([
+      '◼ Plan 3 — Frontend Foundation · 1/3 tasks',
+      '✔ Task 1 Workspace, shared tooling and packages/ui',
+      '◐ Task 2 packages/api — OpenAPI types and the session-aware client · review · on hold',
+      '◼ Task 3 The three app shells · implementing',
+    ])
+    // Only the task being worked on is bold
+    expect(texts.map(one => one.props.bold)).toEqual([true, false, false, true])
+  }
+})

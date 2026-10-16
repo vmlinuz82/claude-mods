@@ -34,7 +34,7 @@ const refreshPlan = async ($: EngineInterface): Promise<void> => {
   await update($, plan, () => running)
 }
 
-const MARK = { pending: '◻', in_progress: '◼', completed: '✔' } as const
+const MARK = { pending: '◻', in_progress: '◼', completed: '✔', on_hold: '◐' } as const
 
 const PANE = 'task-list'
 const PANE_TITLE = 'Plan & tasks'
@@ -398,6 +398,7 @@ const taskTree = ($: EngineInterface, e: RenderInput, planned: readonly PlanTask
           >
             {MARK[task.status]} Task {task.n} {task.title}
             {task.step ? ` · ${task.step}` : ''}
+            {task.status === 'on_hold' ? ' · on hold' : ''}
           </Text>
           {task === activeTask && todoBox}
         </Box>

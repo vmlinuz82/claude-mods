@@ -121,8 +121,8 @@ export const splitTitle = (title: string): { phase: string | null; name: string 
   return { phase: null, name: bare.trim() }
 }
 
-export const planTasks = (headings: readonly PlanHeading[], ledger: Ledger): PlanTask[] =>
-  headings.map(({ n, title }) => {
+export const planTasks = (headings: readonly PlanHeading[], ledger: Ledger): PlanTask[] => {
+  const tasks = headings.map(({ n, title }): PlanTask => {
     const entry = ledger.tasks[n]
     if (entry?.isComplete) {
       return { n, title, status: 'completed' }
@@ -133,6 +133,12 @@ export const planTasks = (headings: readonly PlanHeading[], ledger: Ledger): Pla
 
     return entry.step === undefined ? { n, title, status: 'in_progress' } : { n, title, status: 'in_progress', step: entry.step }
   })
+  // A controller may leave a task open and start the next (its fixes deferred): the newest started
+  // task is the one being worked on, an earlier open one is on hold
+  const newest = Math.max(...tasks.filter(task => task.status === 'in_progress').map(task => task.n))
+
+  return tasks.map(task => (task.status === 'in_progress' && task.n < newest ? { ...task, status: 'on_hold' } : task))
+}
 
 const normalized = (text: string): string => text.trim().toLowerCase()
 
