@@ -77,10 +77,13 @@ export const parseLedger = (text: string): Ledger => {
   const plan = lines[0]?.match(LEDGER_IDENTITY)?.[1] ?? null
   const tasks: Record<number, LedgerTask> = {}
 
-  for (const line of lines) {
-    const match = line.match(LEDGER_TASK)
+  // A line may hold several events: `Scoped re-review dispatched; Task 4 dispatched in parallel`
+  const clauses = lines.flatMap(line => line.split(';'))
+
+  for (const clause of clauses) {
+    const match = clause.match(LEDGER_TASK)
     // `Task 1 → Task 2 carry: …` is a note between tasks, not a step of either
-    if (!match || line.includes('→')) {
+    if (!match || clause.includes('→')) {
       continue
     }
 

@@ -302,3 +302,20 @@ test('an open task with a later task started is on hold; the breadcrumb follows 
   const view = { isRunning: true, phase: null, name: 'X', tasks, groups: [{ phase: null, plans: [{ name: 'X', status: 'in_progress' as const, isCurrent: true, tasks }] }] }
   expect(breadcrumb(view)).toBe('Plan (1/1) \\ Task (3/4) Clicks per product · implementing')
 })
+
+test('parseLedger reads each `;` part of a line, so a task started mid-line counts', () => {
+  const ledger = [
+    '# SDD ledger — plan: docs/superpowers/plans/2026-10-19-poevtini-plan8-prototype-fidelity.md',
+    'Task 3: review ✅/Changes needed — M2 (test gaps) L4. Fix round 1: M1, M2, Lows.',
+    'Note for T4: add an awaiting_verification row to provideStaleness.',
+    'Scoped re-review dispatched; Task 4 dispatched in parallel (BASE backend b766f50, frontend ba28234).',
+    'Task 3: re-review Approved.',
+    'Task 3: complete (backend 500b060..b766f50)',
+    'Ruling: Task 5 is deferred to after Task 6; nothing else',
+  ].join('\n')
+
+  expect(parseLedger(ledger).tasks).toEqual({
+    3: { isComplete: true, step: 're-review' },
+    4: { isComplete: false, step: 'implementing' },
+  })
+})
