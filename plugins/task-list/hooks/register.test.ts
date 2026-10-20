@@ -395,7 +395,7 @@ test('the band keeps another mod band drawn beneath it, under the task list', { 
   }
 })
 
-test('a task left open behind a newer one shows on hold', async ($, on) => {
+test('a task the ledger defers shows on hold', async ($, on) => {
   const disk = {
     ...PHASE_7_DISK,
     [`${SDD}/2026-10-13-phase7-plan3-frontend/progress.md`]: {
@@ -403,6 +403,7 @@ test('a task left open behind a newer one shows on hold', async ($, on) => {
         '# SDD ledger — plan: docs/superpowers/plans/2026-10-13-phase7-plan3-frontend.md',
         'Task 1: complete (a..b)',
         'Task 2 review: spec ❌ / Changes needed',
+        'Ruling: Task 2 I1 deferred to after Task 3',
         'Task 3: dispatched (BASE frontend 3d45ecc)',
       ].join('\n'),
       mtimeMs: 300,

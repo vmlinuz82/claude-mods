@@ -5,7 +5,8 @@ import type { PhaseGroup, PlanRow, PlanTask, PlanView, TaskStatus } from '../typ
 // (.superpowers/sdd/<plan>/progress.md, `Task N: …` lines, `Task N: complete` when done)
 
 export type PlanHeading = { n: number; title: string }
-export type LedgerTask = { isComplete: boolean; step?: string }
+// isOnHold: deferred by a ledger line (`Ruling: Task 6 … deferred to after Task 7`) and not moved since
+export type LedgerTask = { isComplete: boolean; step?: string; isOnHold?: true }
 export type Ledger = { plan: string | null; tasks: Record<number, LedgerTask> }
 
 // What the loader reads the disk with; never rejects: a missing path is null, [] or false
@@ -16,6 +17,8 @@ export type Files = {
 }
 
 const TASK_HEADING = /^#+\s+Task\s+(\d+)\b[:.\s—–-]*(.*)$/
+const NOTE = /^\s*:\s*(ruling|minor|parked|note)\b/i
+const DEFERRAL = /\bdefer(red|s)?\b|\bon hold\b/i
 const LEDGER_IDENTITY = /^# SDD ledger — plan:\s*(.+?)\s*$/
 // A ledger line, bare or as a list item (`- Task 3: …`): controllers write it both ways
 const LEDGER_TASK = /^\s*(?:[-*+]\s+)?Task\s+(\d+)\b(.*)$/
@@ -27,7 +30,7 @@ const IMPLEMENTATION_PLAN = /[\s—–-]*Implementation Plan\s*$/
 const STEPS: [RegExp, (match: RegExpMatchArray) => string][] = [
   [/\bfix round (\d+)/i, match => `fix round ${match[1]}`],
   [/\bre-review\b/i, () => 're-review'],
-  [/\breview\b/i, () => 'review'],
+  [/\breview(er)?\b/i, () => 'review'],
   [/\b(dispatched|started)\b/i, () => 'implementing'],
   [/\bimplement(er|ed)\b/i, () => 'implemented'],
 ]
@@ -77,25 +80,44 @@ export const parseLedger = (text: string): Ledger => {
   const plan = lines[0]?.match(LEDGER_IDENTITY)?.[1] ?? null
   const tasks: Record<number, LedgerTask> = {}
 
-  // A line may hold several events: `Scoped re-review dispatched; Task 4 dispatched in parallel`
-  const clauses = lines.flatMap(line => line.split(';'))
+  // A line may hold several events (`Scoped re-review dispatched; Task 4 dispatched in parallel`): each part
+  // starting `Task N` opens a segment of that task, and the parts after it stay with it
+  const segments = lines.flatMap(line =>
+    line.split(';').reduce<string[]>((parts, part) => {
+      if (LEDGER_TASK.test(part) || parts.length === 0) {
+        return [...parts, part]
+      }
 
-  for (const clause of clauses) {
-    const match = clause.match(LEDGER_TASK)
-    // `Task 1 → Task 2 carry: …` is a note between tasks, not a step of either
-    if (!match || clause.includes('→')) {
+      return [...parts.slice(0, -1), `${parts[parts.length - 1]};${part}`]
+    }, []),
+  )
+
+  for (const segment of segments) {
+    const match = segment.match(LEDGER_TASK)
+    if (!match) {
+      // A ruling that defers a task puts it on hold (`Ruling: Task 6 I1 … deferred to after Task 7`)
+      const held = DEFERRAL.test(segment) ? Number(segment.match(/\bTask\s+(\d+)/)?.[1]) : NaN
+      const heldTask = tasks[held]
+      if (heldTask && !heldTask.isComplete) {
+        tasks[held] = { ...heldTask, isOnHold: true }
+      }
       continue
     }
-
     const n = Number(match[1])
     const rest = match[2] ?? ''
-    const task = tasks[n] ?? { isComplete: false }
+    // `Task 1 → Task 2 carry: …` is a note between tasks, not a step of either
+    if (/^\s*→/.test(rest)) {
+      continue
+    }
+    // The task moves again: no longer on hold
+    const { isOnHold: _wasOnHold, ...task } = tasks[n] ?? { isComplete: false }
     if (/^\s*:\s*complete\b/i.test(rest)) {
       tasks[n] = { ...task, isComplete: true }
       continue
     }
 
-    const step = stepOf(rest)
+    // A note on the task (`Task 2: Ruling: …`, `Task 1: minor (deferred): …`) is no step of it
+    const step = NOTE.test(rest) ? null : stepOf(rest)
     tasks[n] = step === null ? task : { ...task, step }
   }
 
@@ -124,8 +146,8 @@ export const splitTitle = (title: string): { phase: string | null; name: string 
   return { phase: null, name: bare.trim() }
 }
 
-export const planTasks = (headings: readonly PlanHeading[], ledger: Ledger): PlanTask[] => {
-  const tasks = headings.map(({ n, title }): PlanTask => {
+export const planTasks = (headings: readonly PlanHeading[], ledger: Ledger): PlanTask[] =>
+  headings.map(({ n, title }): PlanTask => {
     const entry = ledger.tasks[n]
     if (entry?.isComplete) {
       return { n, title, status: 'completed' }
@@ -134,14 +156,11 @@ export const planTasks = (headings: readonly PlanHeading[], ledger: Ledger): Pla
       return { n, title, status: 'pending' }
     }
 
-    return entry.step === undefined ? { n, title, status: 'in_progress' } : { n, title, status: 'in_progress', step: entry.step }
-  })
-  // A controller may leave a task open and start the next (its fixes deferred): the newest started
-  // task is the one being worked on, an earlier open one is on hold
-  const newest = Math.max(...tasks.filter(task => task.status === 'in_progress').map(task => task.n))
+    // Tasks may run in parallel: each open task is in progress unless the ledger deferred it
+    const status = entry.isOnHold ? 'on_hold' : 'in_progress'
 
-  return tasks.map(task => (task.status === 'in_progress' && task.n < newest ? { ...task, status: 'on_hold' } : task))
-}
+    return entry.step === undefined ? { n, title, status } : { n, title, status, step: entry.step }
+  })
 
 const normalized = (text: string): string => text.trim().toLowerCase()
 
@@ -302,14 +321,13 @@ export const breadcrumb = (view: PlanView): string => {
   const group = view.groups.find(one => one.plans.some(row => row.isCurrent))
   const planAt = group ? group.plans.findIndex(row => row.isCurrent) + 1 : 1
   const planCount = group ? group.plans.length : 1
-  const task =
-    view.tasks.find(one => one.status === 'in_progress') ??
-    view.tasks.find(one => one.status === 'pending') ??
-    view.tasks[view.tasks.length - 1]
+  const running = view.tasks.filter(one => one.status === 'in_progress')
+  const task = running[0] ?? view.tasks.find(one => one.status === 'pending') ?? view.tasks[view.tasks.length - 1]
   const taskAt = task ? view.tasks.indexOf(task) + 1 : 0
+  const parallel = running.length > 1 ? ` (+${running.length - 1} in parallel)` : ''
   const crumbs = [
     `Plan (${planAt}/${planCount})`,
-    `Task (${taskAt}/${view.tasks.length})${task ? ` ${task.title}${task.step ? ` · ${task.step}` : ''}` : ''}`,
+    `Task (${taskAt}/${view.tasks.length})${task ? ` ${task.title}${task.step ? ` · ${task.step}` : ''}${parallel}` : ''}`,
   ]
   if (view.phase !== null && group) {
     crumbs.unshift(`Phase ${view.phase} (${phases.indexOf(group) + 1}/${phases.length})`)

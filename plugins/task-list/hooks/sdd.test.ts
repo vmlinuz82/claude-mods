@@ -319,3 +319,81 @@ test('parseLedger reads each `;` part of a line, so a task started mid-line coun
     4: { isComplete: false, step: 'implementing' },
   })
 })
+
+test('tasks run in parallel stay in progress; only a deferred task is on hold, until it moves again', () => {
+  const headings = [35, 36, 37, 38].map(n => ({ n, title: `T${n}` }))
+  const parallel = parseLedger(
+    [
+      '# SDD ledger — plan: docs/superpowers/plans/2026-10-19-poevtini-plan8-prototype-fidelity.md',
+      'Task 38: complete (backend 483c168..9ebaecd)',
+      'Task 35: implementer DONE_WITH_CONCERNS — backend b9e7421 (5903 OK). Opus reviewer dispatched (concern 6).',
+      'Owner (2026-10-20): run other tasks in parallel. Ruling: Task 36 split — 36-admin and 36-client run now in parallel with the Task 35 review.',
+      'Task 36-admin and 36-client: implementers dispatched in parallel (sonnet) — BASE frontend c269f82; shared e2e lock.',
+    ].join('\n'),
+  )
+  expect(planTasks(headings, parallel).map(task => [task.n, task.status, task.step])).toEqual([
+    [35, 'in_progress', 'review'],
+    [36, 'in_progress', 'implementing'],
+    [37, 'pending', undefined],
+    [38, 'completed', undefined],
+  ])
+
+  const deferred = [
+    '# SDD ledger — plan: docs/superpowers/plans/x.md',
+    'Task 35 review: spec ❌ / Changes needed (0C/2I/5M)',
+    'Task 35: minor (deferred): no StrictMode test — a minor finding, not the task',
+    'Ruling: Task 35 I1 (screenshots incomplete) deferred to after Task 36 — one e2e session covers both',
+    'Task 36: dispatched (BASE backend 9a956ff)',
+  ]
+  expect(planTasks(headings, parseLedger(deferred.join('\n'))).map(task => task.status)).toEqual(['on_hold', 'in_progress', 'pending', 'pending'])
+  // Its deferred work resumes: in progress again
+  const resumed = [...deferred, 'Task 36: complete (a..b)', 'Task 35: fix round 1 dispatched (resume implementer)']
+  expect(planTasks(headings, parseLedger(resumed.join('\n'))).map(task => [task.status, task.step])).toEqual([
+    ['in_progress', 'fix round 1'],
+    ['completed', undefined],
+    ['pending', undefined],
+    ['pending', undefined],
+  ])
+})
+
+test('the breadcrumb names the first task in progress and counts the others running in parallel', () => {
+  const tasks = planTasks(
+    [35, 36, 37].map(n => ({ n, title: `T${n}` })),
+    parseLedger('Task 35: reviewer dispatched\nTask 36: dispatched'),
+  )
+  const view = { isRunning: true, phase: null, name: 'X', tasks, groups: [{ phase: null, plans: [{ name: 'X', status: 'in_progress' as const, isCurrent: true, tasks }] }] }
+
+  expect(breadcrumb(view)).toBe('Plan (1/1) \\ Task (1/3) T35 · review (+1 in parallel)')
+})
+
+test('a deferred minor finding does not put its task on hold', () => {
+  const ledger = parseLedger('Task 2: dispatched\nTask 2: minor (deferred): no StrictMode test; failed logout invisible')
+
+  expect(planTasks([{ n: 2, title: 'T2' }], ledger)).toEqual([{ n: 2, title: 'T2', status: 'in_progress', step: 'implementing' }])
+})
+
+test('a task line that mentions deferred findings still counts; text after a ; stays with its task', () => {
+  const ledger = parseLedger(
+    [
+      'Task 5: fix round 1/5 (suite uncollectable) then round 2/5 (3 cli tests, not 1);',
+      'Task 5: complete (commits f139c3f..ead328c, review clean, 2 minors deferred)',
+      'Task 12: dispatched',
+      'Task 12: DEFERRED for final review — no backoff on a persistently failing source',
+      'Task 35: implementer DONE_WITH_CONCERNS — backend b9e7421 (5903 OK). Accepted: singular grammar for 1 product; 6-hour job uses a real activation; re-activation keeps existing targets. Opus reviewer dispatched (concern 6).',
+    ].join('\n'),
+  )
+
+  expect(ledger.tasks).toEqual({
+    5: { isComplete: true, step: 'fix round 1' },
+    12: { isComplete: false, step: 'review' },
+    35: { isComplete: false, step: 'review' },
+  })
+})
+
+test('an arrow later in a task line does not hide the line', () => {
+  const ledger = parseLedger(
+    'Task 3: implementer DONE 24ed346 (123 tests; code check extracted to src/lib/code.ts; 410 on accept → invalid-link view)\nTask 1 → Task 2 carry: WatchStatus docblock',
+  )
+
+  expect(ledger.tasks).toEqual({ 3: { isComplete: false, step: 'implemented' } })
+})
