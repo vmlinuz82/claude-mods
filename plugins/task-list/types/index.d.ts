@@ -26,7 +26,8 @@ export type PlanTask = {
 // One plan in the plans folder, with its tasks as its own ledger has them
 export type PlanRow = {
   name: string
-  status: TaskStatus
+  // on_hold: a plan other than the running one, with tasks left open
+  status: TaskStatus | 'on_hold'
   isCurrent: boolean
   tasks: PlanTask[]
 }

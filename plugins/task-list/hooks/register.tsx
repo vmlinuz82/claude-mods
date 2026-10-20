@@ -342,6 +342,7 @@ export const register: Register = on => {
                     wrap="truncate-end"
                   >
                     {MARK[row.status]} {planSummary(row.name, row.tasks)}
+                    {row.status === 'on_hold' ? ' · left open' : ''}
                   </Text>
                   {isCurrentGroup && taskTree($, e, row.tasks, row.isCurrent ? list : [])}
                 </Box>

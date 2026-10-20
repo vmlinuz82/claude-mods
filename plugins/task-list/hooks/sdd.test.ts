@@ -397,3 +397,33 @@ test('an arrow later in a task line does not hide the line', () => {
 
   expect(ledger.tasks).toEqual({ 3: { isComplete: false, step: 'implemented' } })
 })
+
+test('a MERGED line marks every task of the plan done', () => {
+  const ledger = parseLedger(
+    [
+      '# SDD ledger — plan: docs/superpowers/plans/2026-10-16-poevtini-phase7-plan5-client-area.md',
+      'Task 6: complete (a..b)',
+      'Task 7: dispatched (sonnet)',
+      'Follow-up re-review: Ready to merge (0I/4M parked).',
+      'MERGED 2026-10-16: ff main — infra b91e199, backend 3965ad4, frontend b6ec7c8.',
+    ].join('\n'),
+  )
+  const headings = [6, 7, 8].map(n => ({ n, title: `T${n}` }))
+
+  expect(planTasks(headings, ledger).map(task => task.status)).toEqual(['completed', 'completed', 'completed'])
+})
+
+test('a plan before the running one with open tasks shows left open, never in progress', async () => {
+  const disk = {
+    ...PHASE_7_DISK,
+    // Plan 2 has a ledger with an open task and no MERGED line
+    [`${SDD}/2026-10-13-phase7-plan2-tools/progress.md`]: {
+      text: '# SDD ledger — plan: docs/superpowers/plans/2026-10-13-phase7-plan2-tools.md\nTask 1: dispatched',
+      mtimeMs: 200,
+    },
+  }
+  const view = await loadPlanView(memoryFiles(disk), '/repo', NOW)
+  const plan2 = view?.groups.find(group => group.phase === '7')?.plans[1]
+
+  expect([plan2?.name, plan2?.status, plan2?.tasks.map(task => task.status)]).toEqual(['Plan 2 — User Tools', 'on_hold', ['on_hold']])
+})

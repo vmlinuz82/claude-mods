@@ -7,7 +7,8 @@ import type { PhaseGroup, PlanRow, PlanTask, PlanView, TaskStatus } from '../typ
 export type PlanHeading = { n: number; title: string }
 // isOnHold: deferred by a ledger line (`Ruling: Task 6 … deferred to after Task 7`) and not moved since
 export type LedgerTask = { isComplete: boolean; step?: string; isOnHold?: true }
-export type Ledger = { plan: string | null; tasks: Record<number, LedgerTask> }
+// isMerged: a `MERGED …` line — the plan is finished, every task done
+export type Ledger = { plan: string | null; tasks: Record<number, LedgerTask>; isMerged?: true }
 
 // What the loader reads the disk with; never rejects: a missing path is null, [] or false
 export type Files = {
@@ -121,7 +122,9 @@ export const parseLedger = (text: string): Ledger => {
     tasks[n] = step === null ? task : { ...task, step }
   }
 
-  return { plan, tasks }
+  const isMerged = lines.some(line => /^\s*(?:[-*+]\s+)?MERGED\b/.test(line))
+
+  return isMerged ? { plan, tasks, isMerged } : { plan, tasks }
 }
 
 // A sub-phase (3e, 1.5) belongs to its main phase (3, 1); its own label stays at the front of the name
@@ -149,7 +152,7 @@ export const splitTitle = (title: string): { phase: string | null; name: string 
 export const planTasks = (headings: readonly PlanHeading[], ledger: Ledger): PlanTask[] =>
   headings.map(({ n, title }): PlanTask => {
     const entry = ledger.tasks[n]
-    if (entry?.isComplete) {
+    if (entry?.isComplete || ledger.isMerged) {
       return { n, title, status: 'completed' }
     }
     if (entry === undefined) {
@@ -254,7 +257,14 @@ const allPlans = async (
       ledger === null && isBeforeCurrent
         ? plan.tasks.map(({ n, title }): PlanTask => ({ n, title, status: 'completed' }))
         : planTasks(plan.tasks, ledger ?? { plan: null, tasks: {} })
-    rows.push({ phase, name: name || file, status: planStatus(tasks, ledger), isCurrent, tasks })
+    const status = planStatus(tasks, ledger)
+    // One plan runs at a time, the newest ledger's: another plan with open tasks was left open, not worked on
+    const isLeftOpen = !isCurrent && status === 'in_progress'
+    rows.push(
+      isLeftOpen
+        ? { phase, name: name || file, status: 'on_hold', isCurrent, tasks: tasks.map(task => (task.status === 'in_progress' ? { ...task, status: 'on_hold' } : task)) }
+        : { phase, name: name || file, status, isCurrent, tasks },
+    )
   }
 
   return rows
