@@ -84,7 +84,9 @@ export const parseLedger = (text: string): Ledger => {
   // A line may hold several events (`Scoped re-review dispatched; Task 4 dispatched in parallel`): each part
   // starting `Task N` opens a segment of that task, and the parts after it stay with it
   const segments = lines.flatMap(line =>
-    line.split(';').reduce<string[]>((parts, part) => {
+    // `;` separates events, and so does a sentence break before an entry `Task N:` (`Task 23: complete. Task 37: complete.`);
+    // prose that names a task (`… precedes it. Task 6 must hoist it`) is no entry
+    line.split(/;|\.\s+(?=Task\s+\d+\s*:)/).reduce<string[]>((parts, part) => {
       if (LEDGER_TASK.test(part) || parts.length === 0) {
         return [...parts, part]
       }
@@ -122,7 +124,8 @@ export const parseLedger = (text: string): Ledger => {
     tasks[n] = step === null ? task : { ...task, step }
   }
 
-  const isMerged = lines.some(line => /^\s*(?:[-*+]\s+)?MERGED\b/.test(line))
+  // `MERGED …` or `Plan 8 MERGED …`, upper case: a lower-case „Ready to merge“ is only a review verdict
+  const isMerged = lines.some(line => /\bMERGED\b/.test(line))
 
   return isMerged ? { plan, tasks, isMerged } : { plan, tasks }
 }

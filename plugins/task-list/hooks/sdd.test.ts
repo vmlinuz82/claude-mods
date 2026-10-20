@@ -427,3 +427,21 @@ test('a plan before the running one with open tasks shows left open, never in pr
 
   expect([plan2?.name, plan2?.status, plan2?.tasks.map(task => task.status)]).toEqual(['Plan 2 — User Tools', 'on_hold', ['on_hold']])
 })
+
+test('a task completed in a later sentence of a line counts, and MERGED counts anywhere in a line', () => {
+  const sentences = parseLedger('Task 36: dispatched\nTask 23: complete. Task 37: complete. All plan tasks complete → final whole-branch review.')
+  expect(sentences.tasks).toEqual({
+    23: { isComplete: true },
+    36: { isComplete: false, step: 'implementing' },
+    37: { isComplete: true },
+  })
+  expect(sentences.isMerged).toBe(undefined)
+
+  // Prose naming a task mid-line is no entry for it
+  expect(parseLedger('the benefit shrinks with however much markup precedes it. Task 6 must hoist it into the head').tasks).toEqual({})
+
+  const merged = parseLedger('Task 36: dispatched\nPlan 8 MERGED (owner chose 1, 2026-10-20): infra main c070d61, backend main 7a52ba4.')
+  expect(merged.isMerged).toBe(true)
+  // „Ready to merge“ is a review verdict, not a merge
+  expect(parseLedger('Follow-up re-review: Ready to merge (0I/4M parked).').isMerged).toBe(undefined)
+})
