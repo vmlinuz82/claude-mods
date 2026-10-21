@@ -89,16 +89,20 @@ export const parseLedger = (text: string): Ledger => {
   const segments = lines.flatMap(line =>
     // `;` separates events, and so does a sentence break before an entry `Task N:`, `Task N complete` or `Task N dispatched` (`Task 23: complete. Task 37: complete.`);
     // prose that names a task (`… precedes it. Task 6 must hoist it`) is no entry
-    line.split(/;|\.\s+(?=Task\s+\d+\s*(?::|complete\b|dispatched\b))/).reduce<string[]>((parts, part) => {
-      if (LEDGER_TASK.test(part) || parts.length === 0) {
-        return [...parts, part]
-      }
+    line.split(/;|\.\s+(?=Task\s+\d+\s*(?::|complete\b|dispatched\b))/).reduce<{ text: string; isLineStart: boolean }[]>(
+      (parts, part) => {
+        if (LEDGER_TASK.test(part) || parts.length === 0) {
+          return [...parts, { text: part, isLineStart: parts.length === 0 }]
+        }
+        const last = parts[parts.length - 1] as { text: string; isLineStart: boolean }
 
-      return [...parts.slice(0, -1), `${parts[parts.length - 1]};${part}`]
-    }, []),
+        return [...parts.slice(0, -1), { ...last, text: `${last.text};${part}` }]
+      },
+      [],
+    ),
   )
 
-  for (const segment of segments) {
+  for (const { text: segment, isLineStart } of segments) {
     const match = segment.match(LEDGER_TASK)
     if (!match) {
       // A ruling that defers a task puts it on hold (`Ruling: Task 6 I1 … deferred to after Task 7`)
@@ -127,6 +131,10 @@ export const parseLedger = (text: string): Ledger => {
     // A note on the task (`Task 2: Ruling: …`, `Task 1: minor (deferred): …`) is no step of it
     const step = NOTE.test(rest) ? null : stepOf(rest)
     const isApproved = /\bapproved\b/i.test(rest) && !REVIEW_PROBLEM.test(rest)
+    // Mid-line, a task is named in passing (`…; Task 17 added to Plan 10`) unless the part records a step of it
+    if (!isLineStart && step === null && !isApproved && tasks[n] === undefined) {
+      continue
+    }
     const moved = step === null ? task : { ...task, step }
     tasks[n] = isApproved ? { ...moved, isComplete: true } : moved
   }

@@ -490,3 +490,15 @@ test('a later sentence `Task N dispatched` starts that task, and an implementer 
     10: { isComplete: false, step: 'implementing' },
   })
 })
+
+test('a task named mid-line counts only when the part records a step or a completion', () => {
+  const ledger = parseLedger(
+    [
+      'Owner ruling (2026-10-20): Free has no „Провери сега“; Task 17 added to Plan 10; spec lines 38/44 updated.',
+      'Task 2: DONE_WITH_CONCERNS — backend 56aba02; Task 16 needs the remaining time on the read.',
+      'Scoped re-review dispatched; Task 4 dispatched in parallel (BASE backend b766f50).',
+    ].join('\n'),
+  )
+
+  expect(Object.keys(ledger.tasks).map(Number)).toEqual([2, 4])
+})
