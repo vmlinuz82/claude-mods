@@ -531,6 +531,19 @@ test('an agent on a range of tasks works on each of them and shows once, under t
   expect(at('Review Plan 3 tasks 1–3')).toBeGreaterThan(at('Task 1 '))
   expect(at('Review Plan 3 tasks 1–3')).toBeLessThan(at('Task 2 '))
   expect(lines.some(line => line.includes('Other agents'))).toBe(false)
+  // A reviewer at work: its tasks are under review
+  expect(lines.find(line => line.includes('Task 3 The three app shells'))).toContain('◼ Task 3 The three app shells · review')
+})
+
+test('the todos go under the plan, not one task, while several tasks run in parallel', async ($, on) => {
+  await agentSession($, on)
+  await $.tool.call({ tool: 'TodoWrite', todos: [{ content: 'Merge the plan', status: 'pending', activeForm: 'Merging' }] } as never)
+  const one = await shown($, 'terminal')
+  expect(one.findIndex(line => line.includes('Merge the plan'))).toBeLessThan(one.findIndex(line => line.includes('Task 3 ')))
+
+  await spawnAgent($, 'Plan 3 Task 3: shells builder')
+  const two = await shown($, 'terminal')
+  expect(two.findIndex(line => line.includes('Merge the plan'))).toBeGreaterThan(two.findIndex(line => line.includes('shells builder')))
 })
 
 test('tasksOfAgent reads single tasks, ranges and lists, and skips another plan', async () => {

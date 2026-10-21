@@ -556,7 +556,9 @@ const taskTree = (
   agentsUnder: (n: number) => ReturnType<typeof agentLines>,
 ) => {
   const { Box, Text } = $.ui.resolve(e)
-  const activeTask = planned.find(task => task.status === 'in_progress')
+  // The todos are the running task's: under it while one task runs, under the plan while several run in parallel
+  const running = planned.filter(task => task.status === 'in_progress')
+  const activeTask = running.length === 1 ? running[0] : undefined
   const todoBox = todos.length > 0 && (
     <Box key="todos" flexDirection="column" paddingLeft={2}>
       {todoLines($, e, todos)}
@@ -607,9 +609,16 @@ const agentArt = async ($: EngineInterface, e: RenderInput) => {
 // A task with an agent on it is being worked on, whatever its ledger says yet: in the tree and the folded line
 const withAgentsAtWork = <T extends { tasks: PlanTask[] }>(view: T, agentsOf: (n: number) => readonly TrackedAgent[]): T => ({
   ...view,
-  tasks: view.tasks.map(task =>
-    task.status !== 'completed' && task.status !== 'in_progress' && agentsOf(task.n).length > 0 ? { ...task, status: 'in_progress' as const } : task,
-  ),
+  tasks: view.tasks.map(task => {
+    const agents = agentsOf(task.n)
+    if (task.status === 'completed' || agents.length === 0) {
+      return task
+    }
+    // Its reviewer at work: the step is the review, until the ledger names a later one
+    const isReviewed = agents.some(agent => /\breview/i.test(agent.description)) && [undefined, 'implementing', 'implemented'].includes(task.step)
+
+    return { ...task, status: 'in_progress' as const, ...(isReviewed ? { step: 'review' } : {}) }
+  }),
 })
 
 // Agents by the plan tasks they work on, from their descriptions; the rest are no task's. One on several tasks
