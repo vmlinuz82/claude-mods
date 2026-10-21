@@ -81,14 +81,23 @@ export const tasksOfAgent = (description: string, planName: string, tasks: reado
   if (named === undefined) {
     return []
   }
-  const agentPlan = description.match(/\bPlan\s+([0-9][\w.]*)/i)?.[1]
-  const runningPlan = planName.match(/\bPlan\s+([0-9][\w.]*)/i)?.[1]
-  if (agentPlan !== undefined && runningPlan !== undefined && agentPlan.toLowerCase() !== runningPlan.toLowerCase()) {
+  if (isOtherPlan(planOf(description), planOf(planName))) {
     return []
   }
 
   return taskNumbers(named).filter(n => tasks.some(task => task.n === n))
 }
+
+// The plan number a text names: `Plan 11`, `Plan 4b`
+const planOf = (text: string): string | undefined => text.match(/\bPlan\s+([0-9][\w.]*)/i)?.[1]?.toLowerCase()
+
+const isOtherPlan = (agentPlan: string | undefined, runningPlan: string | undefined): boolean =>
+  agentPlan !== undefined && runningPlan !== undefined && agentPlan !== runningPlan
+
+// An agent on the running plan as a whole (`Fix Plan 11 review findings`): it names a plan, no other than the running
+// one (whose title may carry no number), and no task
+export const isOnPlan = (description: string, planName: string): boolean =>
+  planOf(description) !== undefined && !isOtherPlan(planOf(description), planOf(planName))
 
 // Under its task the agent's line names what it does there: „Plan 10 Task 10: referral invites“ → „referral invites“
 export const roleUnderTask = (description: string): string => {

@@ -30,7 +30,7 @@ claude plugin install task-list@claude-mods
 
 ## Background agents
 
-The band also shows the background agents running in the session — under the plan task each one works on, matched by its description (`Plan 10 Task 10: referral invites` → Task 10; `Review Plan 11 tasks 1–4` works on all four and shows once, under Task 1), and the rest under „Other agents“:
+The band also shows the background agents running in the session — under the plan task each one works on, matched by its description (`Plan 10 Task 10: referral invites` → Task 10; `Review Plan 11 tasks 1–4` works on all four and shows once, under Task 1; `Fix Plan 11 review findings` names the plan but no task, so it sits under the plan, after its tasks), and the rest under „Other agents“:
 
 ```
 ◼ Task 10 Referral invites · implementing

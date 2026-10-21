@@ -13,6 +13,7 @@ import {
   roleUnderTask,
   SPINNER,
   SPINNER_SVG,
+  isOnPlan,
   tasksOfAgent,
 } from './agents'
 import { breadcrumb, isPlanTodo, loadPlanView } from './sdd'
@@ -429,7 +430,7 @@ export const register: Register = on => {
           (shown === null
             ? todoLines($, e, hasTodos ? list : [])
             : taskTree($, e, shown.tasks, hasTodos ? list.filter(todo => !isPlansTodo(todo)) : [], n => agentLines($, e, byTask.of(n), at, art, true)))}
-        {!minimized && shown !== null && hasTodos && plansTodos($, e, list)}
+        {!minimized && shown !== null && planAgents($, e, byTask.plan, at, art)}
         {!minimized && unmatched.length > 0 && (
           <Box key="other-agents" flexDirection="column" paddingLeft={running === null && !hasTodos ? 0 : 2}>
             {(running !== null || hasTodos) && (
@@ -440,6 +441,7 @@ export const register: Register = on => {
             {agentLines($, e, unmatched, at, art, false)}
           </Box>
         )}
+        {!minimized && shown !== null && hasTodos && plansTodos($, e, list)}
       </Box>
     )
 
@@ -515,6 +517,7 @@ export const register: Register = on => {
                     taskTree($, e, row.isCurrent ? withAgentsAtWork(row, byTask.on).tasks : row.tasks, row.isCurrent ? list.filter(todo => !isPlansTodo(todo)) : [], n =>
                       row.isCurrent ? agentLines($, e, byTask.of(n), at, art, true) : [],
                     )}
+                  {row.isCurrent && planAgents($, e, byTask.plan, at, art)}
                 </Box>
               ))}
             </Box>
@@ -529,6 +532,25 @@ export const register: Register = on => {
 // The plan's todos repeat its tasks (superpowers makes one per task): the tree shows them once
 const withoutPlanTodos = (list: readonly Task[], view: PlanView | null): Task[] =>
   view === null ? [...list] : list.filter(task => !isPlanTodo(task.subject, view.tasks))
+
+// Agents on the running plan as a whole, after its tasks and in line with them
+const planAgents = (
+  $: EngineInterface,
+  e: RenderInput,
+  list: readonly TrackedAgent[],
+  at: number,
+  art: Awaited<ReturnType<typeof agentArt>>,
+) => {
+  const { Box } = $.ui.resolve(e)
+
+  return (
+    list.length > 0 && (
+      <Box key="plan-agents" flexDirection="column" paddingLeft={2}>
+        {agentLines($, e, list, at, art, false)}
+      </Box>
+    )
+  )
+}
 
 // A todo naming a plan (`Review Plan 11, merge into main`, `Plan 12: …`) is the session's work across plans, no task's
 // and no one plan's: it shows in a section of its own, beside the plan, level with the plan line
@@ -649,11 +671,14 @@ const withAgentsAtWork = <T extends { tasks: PlanTask[] }>(view: T, agentsOf: (n
 // (`Review tasks 1–4`) works on all of them, and its line shows once, under the first
 const agentsByTask = (followed: readonly TrackedAgent[], view: PlanView | null) => {
   const tasksOf = new Map(followed.map(agent => [agent.id, view === null ? [] : tasksOfAgent(agent.description, view.name, view.tasks)]))
+  const onPlan = followed.filter(agent => view !== null && (tasksOf.get(agent.id) ?? []).length === 0 && isOnPlan(agent.description, view.name))
 
   return {
-    matched: new Set(followed.filter(agent => (tasksOf.get(agent.id) ?? []).length > 0).map(agent => agent.id)),
+    matched: new Set([...followed.filter(agent => (tasksOf.get(agent.id) ?? []).length > 0), ...onPlan].map(agent => agent.id)),
     of: (n: number) => followed.filter(agent => tasksOf.get(agent.id)?.[0] === n),
     on: (n: number) => followed.filter(agent => tasksOf.get(agent.id)?.includes(n)),
+    // On the plan as a whole: under it, after its tasks
+    plan: onPlan,
   }
 }
 

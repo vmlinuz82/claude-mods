@@ -565,6 +565,20 @@ test('the todos go under the plan, not one task, while several tasks run in para
   expect(two.findIndex(line => line.includes('Merge the plan'))).toBeGreaterThan(two.findIndex(line => line.includes('shells builder')))
 })
 
+test('an agent on the plan as a whole sits under the plan, after its tasks, and the todos come last', async ($, on) => {
+  await agentSession($, on)
+  await $.tool.call({ tool: 'TodoWrite', todos: [{ content: 'Plan 4: backoffice', status: 'pending', activeForm: 'Starting' }] } as never)
+  await spawnAgent($, 'Fix Plan 3 review findings')
+  await spawnAgent($, 'Plan 9 Task 1 builder')
+  const lines = await shown($, 'terminal')
+  const at = (text: string) => lines.findIndex(line => line.includes(text))
+
+  expect(at('Fix Plan 3 review findings')).toBeGreaterThan(at('Task 3 The three app shells'))
+  expect(at('Fix Plan 3 review findings')).toBeLessThan(at('Other agents'))
+  expect(at('Plan 9 Task 1 builder')).toBeGreaterThan(at('Other agents'))
+  expect(at('Todos')).toBeGreaterThan(at('Plan 9 Task 1 builder'))
+})
+
 test('tasksOfAgent reads single tasks, ranges and lists, and skips another plan', async () => {
   const tasks = [1, 2, 3, 4, 5].map(n => ({ n, title: `T${n}`, status: 'pending' as const }))
   const cases: [string, string, number[]][] = [
