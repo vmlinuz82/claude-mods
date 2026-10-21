@@ -46,22 +46,29 @@ export const describeAction = (tool: string, input: Readonly<Record<string, unkn
   return detail ? `${name}: ${shorten(detail, 40)}` : name
 }
 
-export const isActive = (agent: TrackedAgent, at: number): boolean => at - agent.lastAt < ACTIVE_MS
-export const isStuck = (agent: TrackedAgent, at: number): boolean => at - agent.lastAt >= STUCK_MS
+// A tool call still running (a test suite, a build) keeps its agent active however long it takes
+export const isBusy = (agent: TrackedAgent): boolean => (agent.toolsRunning ?? 0) > 0
+export const isActive = (agent: TrackedAgent, at: number): boolean => isBusy(agent) || at - agent.lastAt < ACTIVE_MS
+export const isStuck = (agent: TrackedAgent, at: number): boolean => !isBusy(agent) && at - agent.lastAt >= STUCK_MS
 
 const minutes = (ms: number): number => Math.max(0, Math.floor(ms / 60_000))
-const ago = (ms: number): string => (ms < 60_000 ? `${Math.max(0, Math.round(ms / 1000))} s ago` : `${minutes(ms)} min ago`)
+const span = (ms: number): string => (ms < 60_000 ? `${Math.max(0, Math.round(ms / 1000))} s` : `${minutes(ms)} min`)
+const ago = (ms: number): string => `${span(ms)} ago`
+
+// „Bash: ./run test · 6 min so far“ while the call runs, „Edit …/a/b · 9 s ago“ after
+const lastStep = (agent: TrackedAgent, quiet: number): string =>
+  `${agent.lastAction} · ${isBusy(agent) ? `${span(quiet)} so far` : ago(quiet)}`
 
 // „builder · running 5 min · Bash: npx vitest run · 9 s ago“; under a task the agent goes by its role, without the
 // task it repeats
 export const agentText = (agent: TrackedAgent, at: number, name: string = agent.description): string => {
   const quiet = at - agent.lastAt
   const running = `${name} · running ${minutes(at - agent.startedAt)} min`
-  if (quiet >= STUCK_MS) {
+  if (isStuck(agent, at)) {
     return `${running} · no activity for ${minutes(quiet)} min`
   }
 
-  return agent.lastAction ? `${running} · ${agent.lastAction} · ${ago(quiet)}` : running
+  return agent.lastAction ? `${running} · ${lastStep(agent, quiet)}` : running
 }
 
 // Which plan task an agent works on, from its description (`Plan 10 Task 10: referral invites`, `Review Task 7`):
@@ -89,9 +96,9 @@ export const roleUnderTask = (description: string): string => {
 // What an agent is doing, for the folded line: „referral rework · Edit …/ReferralCard.tsx · 4 s ago“
 export const agentActivity = (agent: TrackedAgent, at: number, name: string): string => {
   const quiet = at - agent.lastAt
-  if (quiet >= STUCK_MS) {
+  if (isStuck(agent, at)) {
     return `${name} · no activity for ${minutes(quiet)} min`
   }
 
-  return agent.lastAction ? `${name} · ${agent.lastAction} · ${ago(quiet)}` : `${name} · started`
+  return agent.lastAction ? `${name} · ${lastStep(agent, quiet)}` : `${name} · started`
 }

@@ -58,6 +58,8 @@ export type TrackedAgent = {
   lastAt: number
   // Its latest tool call, shortened: „Edit …/profile/PlanCard.tsx“; null before its first
   lastAction: string | null
+  // How many of its tool calls are still running: a long test run is work, not silence
+  toolsRunning: number
 }
 
 declare module 'claude-code' {

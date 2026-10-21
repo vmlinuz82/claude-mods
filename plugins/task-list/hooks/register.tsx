@@ -116,9 +116,21 @@ const followAgent = async ($: EngineInterface, agentId: string, description: str
   await update($, agents, followed => [
     ...followed.filter(agent => agent.id !== agentId),
     known && description === null
-      ? { ...known, lastAt: at, lastAction: action ?? known.lastAction }
-      : { id: agentId, description: name, startedAt: known?.startedAt ?? at, lastAt: at, lastAction: action },
+      ? { ...known, lastAt: at, lastAction: action ?? known.lastAction, toolsRunning: (known.toolsRunning ?? 0) + (action === null ? 0 : 1) }
+      : { id: agentId, description: name, startedAt: known?.startedAt ?? at, lastAt: at, lastAction: action, toolsRunning: action === null ? 0 : 1 },
   ])
+  await update($, clock, () => at)
+  await keepSpinning($)
+}
+
+// The agent's tool call came back: that is activity too, and the quiet starts from here
+const finishTool = async ($: EngineInterface, agentId: string): Promise<void> => {
+  const at = await $.clock.now()
+  await update($, agents, followed =>
+    followed.map(agent =>
+      agent.id === agentId ? { ...agent, lastAt: at, toolsRunning: Math.max(0, (agent.toolsRunning ?? 0) - 1) } : agent,
+    ),
+  )
   await update($, clock, () => at)
   await keepSpinning($)
 }
@@ -221,10 +233,11 @@ export const register: Register = on => {
   // A tool call made inside a background agent is that agent's latest action. A superpowers plan's progress lives
   // in its ledger: read it again after a call that may have written it, and at the end of every turn
   on('tool.call', async ($, e, next) => {
-    if (e.agentId) {
-      await followAgent($, e.agentId, null, describeAction(e.tool, e as unknown as Record<string, unknown>))
+    const agentId = e.agentId
+    if (agentId) {
+      await followAgent($, agentId, null, describeAction(e.tool, e as unknown as Record<string, unknown>))
     }
-    const ran = await next(e)
+    const ran = await next(e).finally(() => (agentId ? finishTool($, agentId) : undefined))
     if (touchesLedger(e)) {
       await refreshPlan($)
     }

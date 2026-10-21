@@ -3,6 +3,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 
 import type { Files } from './sdd'
+import { agentActivity, agentText } from './agents'
 import { memoryFiles, NOW, PHASE_7_DISK, SDD } from './sdd.fixtures'
 
 const SURFACES = ['desktop', 'terminal'] as const
@@ -455,7 +456,14 @@ const agentSession = async ($: Engine, on: On) => {
   on('agent.list', async () => ({
     value: [...statuses].map(([id, status]) => ({ id, description: id, type: 'general-purpose', status })),
   }) as never)
-  on('tool.call', async () => ({ result: 'ok' }) as never)
+  // `./run test` takes a minute, like a long suite
+  on('tool.call', async (_$, e) => {
+    if ((e as { command?: string }).command === './run test') {
+      await clock.sleep(60_000)
+    }
+
+    return { result: 'ok' } as never
+  })
   await $.session.start({ cwd: '/repo', surface: 'desktop', isInteractive: true })
 
   return { statuses, clock }
@@ -488,6 +496,29 @@ test('an agent working on a plan task shows under that task, others under „Oth
     expect(at('Other agents')).toBeGreaterThan(at('Task 3 The three app shells'))
     expect(lines[lines.length - 1]).toContain('Investigate the flaky e2e · running 5 min · Read …/e2e/shots-lib.ts · 10 s ago')
   }
+})
+
+test('an agent inside a long tool call is busy, not quiet, until the call returns', async ($, on) => {
+  const { clock } = await agentSession($, on)
+  const builder = await spawnAgent($, 'Plan 3 Task 2: fix round builder')
+  const suite = agentActs($, builder, { tool: 'Bash', command: './run test' })
+  // Past the 30 s an agent counts as working after its last step: the running call keeps it spinning
+  await clock.advance(40_000)
+  const busy = (await shown($, 'terminal')).find(line => line.includes('fix round builder')) ?? ''
+  expect(busy).toContain('Bash: ./run test · 40 s so far')
+  expect(await (await $.ui.mount({ ...band(true), surface: 'desktop' })).findAll({ type: 'Svg' })).toHaveLength(1)
+
+  // However long it runs, it never reads as quiet
+  const inSuite = { id: builder, description: 'builder', startedAt: 0, lastAt: 0, lastAction: 'Bash: ./run test', toolsRunning: 1 }
+  expect(agentText(inSuite, 7 * 60_000)).toBe('builder · running 7 min · Bash: ./run test · 7 min so far')
+  expect(agentActivity(inSuite, 7 * 60_000, 'builder')).toBe('builder · Bash: ./run test · 7 min so far')
+
+  // Back from the call, the quiet counts from its end
+  await clock.advance(25_000)
+  await suite
+  const done = (await shown($, 'terminal')).find(line => line.includes('fix round builder')) ?? ''
+  expect(done).toContain('Bash: ./run test · 5 s ago')
+  expect(done).not.toContain('no activity')
 })
 
 test('an agent line spins while it works, turns amber when quiet for 5 minutes and leaves when finished', async ($, on) => {

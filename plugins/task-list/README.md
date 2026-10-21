@@ -41,6 +41,7 @@ Other agents
 
 - **The marker spins while the agent is working right now** (it acted in the last 30 seconds): an animated spinner in the desktop app, a text spinner in the terminal. `◦` means running but quiet; the folded line spins too while any agent works.
 - **No activity for 5 minutes turns its line amber** („no activity for 7 min“): a running agent that may be stuck.
+- **A tool call still running counts as work** („Bash: ./run test · 6 min so far“): a long test suite or build keeps the agent spinning and never turns it amber.
 - An agent shows when it starts or first acts, and leaves when it finishes, fails or is stopped; a finished agent that could be resumed (waiting or idle) is not running.
 - The times update every 5 seconds; the engine's agent list is read every 15 seconds. Token counts are left to the app's own Background tasks panel.
 
