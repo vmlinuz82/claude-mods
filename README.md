@@ -16,6 +16,10 @@ Three Claude Code mods, installed separately. All work in the terminal and in th
 
 ![The skills and MCP servers used in the session, above the prompt](docs/skill-usage-band.png)
 
+### `cache-meter`
+
+![The cache strip above the prompt](docs/cache-meter-strip.png)
+
 ## Prerequisites
 
 - Claude Code **2.1.286** or newer (`claude --version`). The desktop app ships its own build, so only a terminal `claude` is likely to be behind.

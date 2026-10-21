@@ -4,11 +4,11 @@ Shows how long Claude's prompt cache stays warm, how much of each request it ser
 
 Above the prompt, one strip of pills:
 
-```
-(● Cache warm) (🕑 59:15 left) (1 h TTL so far: −81k) (≈ 36.7M saved this session) (86% of context used) (99% from cache) (865k tokens cached)   ↑
-```
+![The cache strip above the prompt in the desktop app](../../docs/cache-meter-strip.png)
 
-The arrow opens the details: a bar for the time left, the mix of the last request (read from cache, written to it, new), the context fill, and a line each for the last turn and the session.
+The arrow opens the details: a bar for the time left, the mix of the last request (read from cache, written to it, new), the context fill, and a line each for the last turn and the session, with what each saved:
+
+![The cache details opened under the strip](../../docs/cache-meter-details.png)
 
 ## Install
 
