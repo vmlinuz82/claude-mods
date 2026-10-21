@@ -36,6 +36,9 @@ test('parseLedger names each kind of step', () => {
     ['Task 4 re-review 1: all 6 addressed', 're-review'],
     ['Task 4 fix round 2: dispatched (resume implementer)', 'fix round 2'],
     ['Task 4: fix round 2/5 (1 addressed, 0 open; commits a..b)', 'fix round 2'],
+    // A review still to come: the task is implemented
+    ['Task 4: implemented, review pending (backend 8919b53; WatchListSearchTest 17 OK)', 'implemented'],
+    ['Task 4: DONE, awaiting review', 'implemented'],
   ]
 
   for (const [line, step] of cases) {

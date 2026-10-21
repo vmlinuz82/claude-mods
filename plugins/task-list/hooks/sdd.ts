@@ -32,7 +32,8 @@ const IMPLEMENTATION_PLAN = /[\s—–-]*Implementation Plan\s*$/
 const STEPS: [RegExp, (match: RegExpMatchArray) => string][] = [
   [/\bfix round (\d+)/i, match => `fix round ${match[1]}`],
   [/\bre-review\b/i, () => 're-review'],
-  [/\breview(er)?\b/i, () => 'review'],
+  // A review still to come (`implemented, review pending`, `awaiting review`) is not one under way
+  [/(?<!\b(awaiting|needs|before|for|to)\s+)\breview(er)?\b(?!\s+(pending|next|later|queued|due))/i, () => 'review'],
   // The implementer's report (`Task 5: DONE — …`, `DONE_WITH_CONCERNS`), upper case as superpowers writes it
   [/\bDONE(_WITH_CONCERNS)?\b/, () => 'implemented'],
   [/\b(dispatched|started)\b/i, () => 'implementing'],
