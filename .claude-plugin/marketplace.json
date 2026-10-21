@@ -25,6 +25,15 @@
       },
       "category": "productivity",
       "source": "./plugins/skill-usage"
+    },
+    {
+      "name": "agent-activity",
+      "description": "Shows the running background agents above the prompt: what each is doing and whether it is still active",
+      "author": {
+        "name": "Konstantin Ivanov"
+      },
+      "category": "productivity",
+      "source": "./plugins/agent-activity"
     }
   ]
 }

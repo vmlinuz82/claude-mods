@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register } from 'claude-code'
+import type { EngineInterface, Register, RenderElement } from 'claude-code'
 
 import type { Catalog, Counts } from '../types'
 
@@ -159,13 +159,18 @@ export const register: Register = on => {
       return mine
     }
 
-    // Two bands stacked: each framed like the prompt box, a row apart, so they read as two
+    // Bands stacked: each framed like the prompt box, a row apart, so they read apart; a stack another mod already
+    // framed (key band-stack) is joined rather than framed again
+    const stacked = (below as { props?: { key?: string } }).props?.key === 'band-stack'
+
     return (
-      <Box flexDirection="column" rowGap={1}>
-        <Box key="upper" flexDirection="column" borderStyle="round" borderColor="promptBorder" paddingX={1}>
-          {below}
-        </Box>
-        <Box key="lower" flexDirection="column" borderStyle="round" borderColor="promptBorder" paddingX={1}>
+      <Box key="band-stack" flexDirection="column" rowGap={1}>
+        {stacked ? (below as { children?: RenderElement[] }).children : (
+          <Box key="upper" flexDirection="column" borderStyle="round" borderColor="promptBorder" paddingX={1}>
+            {below}
+          </Box>
+        )}
+        <Box key="skill-usage-frame" flexDirection="column" borderStyle="round" borderColor="promptBorder" paddingX={1}>
           {mine}
         </Box>
       </Box>
