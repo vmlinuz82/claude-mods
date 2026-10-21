@@ -1,11 +1,12 @@
 # claude-mods
 
-Two Claude Code mods, installed separately. Both work in the terminal and in the desktop app's Code tab.
+Three Claude Code mods, installed separately. All work in the terminal and in the desktop app's Code tab.
 
 | Mod | What it shows |
 |---|---|
 | [`task-list`](plugins/task-list/README.md) | The session's tasks as a checklist above the prompt, with the background agents working on them |
 | [`skill-usage`](plugins/skill-usage/README.md) | The skills and MCP servers used in the session, with a full table in a pane |
+| [`cache-meter`](plugins/cache-meter/README.md) | How long the prompt cache stays warm, how much of each request it served, and what it saved |
 
 ### `task-list`
 
@@ -39,6 +40,10 @@ claude plugin install task-list@claude-mods
 
 ```bash
 claude plugin install skill-usage@claude-mods
+```
+
+```bash
+claude plugin install cache-meter@claude-mods
 ```
 
 Start a new session (or run `/reload-plugins` in a running one) to see them.

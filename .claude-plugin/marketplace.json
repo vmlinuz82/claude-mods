@@ -25,6 +25,15 @@
       },
       "category": "productivity",
       "source": "./plugins/skill-usage"
+    },
+    {
+      "name": "cache-meter",
+      "description": "Shows how long Claude's prompt cache stays warm, what each turn read from it, and what the cache saved",
+      "author": {
+        "name": "Konstantin Ivanov"
+      },
+      "category": "productivity",
+      "source": "./plugins/cache-meter"
     }
   ]
 }

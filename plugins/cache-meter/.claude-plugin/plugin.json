@@ -1,0 +1,9 @@
+{
+  "name": "cache-meter",
+  "description": "Shows how long Claude's prompt cache stays warm, how much each turn read from it and what it saved",
+  "author": {
+    "name": "Konstantin Ivanov",
+    "email": "ko.ivanov@gmail.com"
+  },
+  "types": "./types/index.d.ts"
+}
