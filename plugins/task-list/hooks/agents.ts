@@ -41,7 +41,9 @@ export const describeAction = (tool: string, input: Readonly<Record<string, unkn
   if (path) {
     return `${name} ${shortPath(path)}`
   }
-  const detail = text('command') ?? text('pattern') ?? text('description') ?? text('url') ?? text('query')
+  // A Bash call says what it does in its description; else its command, past the `cd <dir> &&` that opens it
+  const command = text('command')?.replace(/^(\s*cd\s+\S+\s*(&&|;)\s*)+/, '') ?? null
+  const detail = (name === 'Bash' ? text('description') : null) ?? command ?? text('pattern') ?? text('description') ?? text('url') ?? text('query')
 
   return detail ? `${name}: ${shorten(detail, 40)}` : name
 }

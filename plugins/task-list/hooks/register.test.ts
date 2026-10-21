@@ -3,7 +3,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 
 import type { Files } from './sdd'
-import { agentActivity, agentText } from './agents'
+import { agentActivity, agentText, describeAction } from './agents'
 import { memoryFiles, NOW, PHASE_7_DISK, SDD } from './sdd.fixtures'
 
 const SURFACES = ['desktop', 'terminal'] as const
@@ -495,6 +495,17 @@ test('an agent working on a plan task shows under that task, others under „Oth
     // The unmatched agent at the bottom
     expect(at('Other agents')).toBeGreaterThan(at('Task 3 The three app shells'))
     expect(lines[lines.length - 1]).toContain('Investigate the flaky e2e · running 5 min · Read …/e2e/shots-lib.ts · 10 s ago')
+  }
+})
+
+test('describeAction names a Bash call by its description, else its command past the opening cd', async () => {
+  const cases: readonly [Record<string, unknown>, string][] = [
+    [{ command: 'cd /home/kosio/Projects/poevtini && ./run test', description: 'Run full backend test suite' }, 'Bash: Run full backend test suite'],
+    [{ command: 'cd /home/kosio/Projects/poevtini/repositories/poevtini-backend && cd tests; php bin/phpunit --filter Referral' }, 'Bash: php bin/phpunit --filter Referral'],
+    [{ command: "python3 - <<'EOF'\nprint(1)\nEOF" }, "Bash: python3 - <<'EOF'"],
+  ]
+  for (const [input, shown] of cases) {
+    expect(describeAction('Bash', input)).toBe(shown)
   }
 })
 
