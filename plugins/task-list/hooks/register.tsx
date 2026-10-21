@@ -428,7 +428,8 @@ export const register: Register = on => {
         {!minimized &&
           (shown === null
             ? todoLines($, e, hasTodos ? list : [])
-            : taskTree($, e, shown.tasks, hasTodos ? list : [], n => agentLines($, e, byTask.of(n), at, art, true)))}
+            : taskTree($, e, shown.tasks, hasTodos ? list.filter(todo => !isPlansTodo(todo)) : [], n => agentLines($, e, byTask.of(n), at, art, true)))}
+        {!minimized && shown !== null && hasTodos && plansTodos($, e, list)}
         {!minimized && unmatched.length > 0 && (
           <Box key="other-agents" flexDirection="column" paddingLeft={running === null && !hasTodos ? 0 : 2}>
             {(running !== null || hasTodos) && (
@@ -511,7 +512,7 @@ export const register: Register = on => {
                     {row.status === 'on_hold' ? ' · left open' : ''}
                   </Text>
                   {isCurrentGroup &&
-                    taskTree($, e, row.isCurrent ? withAgentsAtWork(row, byTask.on).tasks : row.tasks, row.isCurrent ? list : [], n =>
+                    taskTree($, e, row.isCurrent ? withAgentsAtWork(row, byTask.on).tasks : row.tasks, row.isCurrent ? list.filter(todo => !isPlansTodo(todo)) : [], n =>
                       row.isCurrent ? agentLines($, e, byTask.of(n), at, art, true) : [],
                     )}
                 </Box>
@@ -519,6 +520,7 @@ export const register: Register = on => {
             </Box>
           )
         })}
+        {plansTodos($, e, list)}
       </Box>
     )
   })
@@ -527,6 +529,26 @@ export const register: Register = on => {
 // The plan's todos repeat its tasks (superpowers makes one per task): the tree shows them once
 const withoutPlanTodos = (list: readonly Task[], view: PlanView | null): Task[] =>
   view === null ? [...list] : list.filter(task => !isPlanTodo(task.subject, view.tasks))
+
+// A todo naming a plan (`Review Plan 11, merge into main`, `Plan 12: …`) is the session's work across plans, no task's
+// and no one plan's: it shows in a section of its own, beside the plan, level with the plan line
+const isPlansTodo = (todo: Task): boolean => /\bPlan\s+[0-9]/i.test(todo.subject)
+
+const plansTodos = ($: EngineInterface, e: RenderInput, list: readonly Task[]) => {
+  const { Box, Text } = $.ui.resolve(e)
+  const across = list.filter(isPlansTodo)
+
+  return (
+    across.length > 0 && (
+      <Box key="plans-todos" flexDirection="column">
+        <Text key="plans-todos-title" dimColor>
+          Todos
+        </Text>
+        {todoLines($, e, across)}
+      </Box>
+    )
+  )
+}
 
 const planSummary = (name: string, planned: readonly PlanTask[]): string =>
   `${name} · ${planned.filter(task => task.status === 'completed').length}/${planned.length} tasks`
@@ -556,20 +578,16 @@ const taskTree = (
   agentsUnder: (n: number) => ReturnType<typeof agentLines>,
 ) => {
   const { Box, Text } = $.ui.resolve(e)
-  // The todos are the running task's: under it while one task runs, under the plan while several run in parallel.
-  // A todo naming a plan (`Review Plan 11, merge into main`, `Plan 12: …`) is the plans' work, never a task's
+  // The todos are the running task's: under it while one task runs, under the plan while several run in parallel
   const running = planned.filter(task => task.status === 'in_progress')
   const activeTask = running.length === 1 ? running[0] : undefined
-  const isPlansTodo = (todo: Task) => /\bPlan\s+[0-9]/i.test(todo.subject)
   const todoBox = (key: string, shown: readonly Task[], indent: number) =>
     shown.length > 0 && (
       <Box key={key} flexDirection="column" paddingLeft={indent}>
         {todoLines($, e, shown)}
       </Box>
     )
-  const taskTodos = todoBox('todos', todos.filter(todo => !isPlansTodo(todo)), 2)
-  // In line with the tasks, not under the last one
-  const plansTodos = todoBox('plan-todos', todos.filter(isPlansTodo), 0)
+  const taskTodos = todoBox('todos', todos, 2)
 
   return (
     <Box key="tasks" flexDirection="column" paddingLeft={2}>
@@ -595,7 +613,6 @@ const taskTree = (
         )
       })}
       {activeTask === undefined && taskTodos}
-      {plansTodos}
     </Box>
   )
 }
