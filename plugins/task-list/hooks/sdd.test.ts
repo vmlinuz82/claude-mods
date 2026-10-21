@@ -183,6 +183,33 @@ test('loadPlanView skips ledgers from before the identity line and follows the n
   expect(view?.groups[1]?.plans[3]?.status).toBe('pending')
 })
 
+test('loadPlanView keeps the running plan current while the next one is only prepared, and takes them in turn', async () => {
+  const ledger = (plan: string, lines = '') => `# SDD ledger — plan: docs/superpowers/plans/${plan}.md\n${lines}`
+  const disk = {
+    [`${PLANS}/2026-10-21-feedback.md`]: { text: '# User feedback Implementation Plan\n### Task 1: Store messages' },
+    [`${PLANS}/2026-10-21-watch-archive.md`]: { text: '# Watch archive and search Implementation Plan\n### Task 1: Search\n### Task 2: Archive' },
+    [`${PLANS}/2026-10-21-multi-shop.md`]: { text: '# One product, many shops Implementation Plan\n### Task 1: Groups' },
+    [`${SDD}/2026-10-21-feedback/progress.md`]: { text: ledger('2026-10-21-feedback', 'Task 1: complete'), mtimeMs: 100 },
+    // Started: no task entry yet, but an agent's report is there
+    [`${SDD}/2026-10-21-watch-archive/progress.md`]: { text: ledger('2026-10-21-watch-archive'), mtimeMs: 200 },
+    [`${SDD}/2026-10-21-watch-archive/task-1-brief.md`]: { text: '', mtimeMs: 200 },
+    [`${SDD}/2026-10-21-watch-archive/tasks-1-2-report.md`]: { text: '', mtimeMs: 250 },
+    // Prepared ahead, written last
+    [`${SDD}/2026-10-21-multi-shop/progress.md`]: { text: ledger('2026-10-21-multi-shop', 'Starts after the archive is merged.'), mtimeMs: 300 },
+    [`${SDD}/2026-10-21-multi-shop/plan-path`]: { text: '', mtimeMs: 300 },
+    [`${SDD}/2026-10-21-multi-shop/task-1-brief.md`]: { text: '', mtimeMs: 300 },
+  }
+  expect((await loadPlanView(memoryFiles(disk), '/repo', NOW))?.name).toBe('Watch archive and search')
+
+  // Both prepared after a finished plan: the one written first is next
+  const queued = Object.fromEntries(Object.entries(disk).filter(([path]) => !path.endsWith('report.md')))
+  expect((await loadPlanView(memoryFiles(queued), '/repo', NOW))?.name).toBe('Watch archive and search')
+
+  // The archive done: the prepared plan takes over
+  const done = { ...disk, [`${SDD}/2026-10-21-watch-archive/progress.md`]: { text: ledger('2026-10-21-watch-archive', 'Task 1: complete\nTask 2: complete'), mtimeMs: 400 } }
+  expect((await loadPlanView(memoryFiles(done), '/repo', NOW))?.name).toBe('One product, many shops')
+})
+
 test('loadPlanView counts a plan as running only while its ledger changed in the last day', async () => {
   const day = 24 * 60 * 60 * 1000
   const cases: [number, boolean][] = [

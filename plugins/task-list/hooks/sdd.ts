@@ -224,26 +224,46 @@ const findRoot = async (files: Files, cwd: string): Promise<string | null> => {
 
 // The ledger written last that names its plan: superpowers runs one plan at a time, and a ledger
 // without the `# SDD ledger — plan:` line predates the format, its tasks unreadable
-const newestLedger = async (files: Files, sdd: string): Promise<{ ledger: Ledger; mtimeMs: number } | null> => {
+// What preparing a plan writes: its ledger, the plan's path and the task briefs. A workspace holding nothing else,
+// with no task in its ledger, is prepared but not started
+const PREPARED_FILE = /^(progress\.md|plan-path|task-\d+-brief\.md)$/
+
+type Found = { ledger: Ledger; mtimeMs: number; isStarted: boolean }
+
+// The ledger of the plan being worked on: the newest started one while it is open. A plan prepared ahead (its
+// workspace and briefs written before the running plan is done) waits its turn: it is current only once the
+// latest started plan is finished, the oldest prepared one first
+const currentLedger = async (files: Files, sdd: string, root: string): Promise<Found | null> => {
   const dirs = (await files.list(sdd)).filter(entry => entry.kind === 'dir')
-  const ledgers: { path: string; mtimeMs: number }[] = []
+  const found: Found[] = []
   for (const dir of dirs) {
     const entries = await files.list(`${sdd}/${dir.name}`)
-    const ledger = entries.find(file => file.name === 'progress.md' && file.kind === 'file')
-    if (ledger) {
-      ledgers.push({ path: `${sdd}/${dir.name}/progress.md`, mtimeMs: ledger.mtimeMs })
-    }
-  }
-
-  for (const { path, mtimeMs } of ledgers.sort((a, b) => b.mtimeMs - a.mtimeMs)) {
-    const text = await files.read(path)
+    const file = entries.find(entry => entry.name === 'progress.md' && entry.kind === 'file')
+    const text = file ? await files.read(`${sdd}/${dir.name}/progress.md`) : null
     const ledger = text === null ? null : parseLedger(text)
-    if (ledger?.plan) {
-      return { ledger, mtimeMs }
+    if (file && ledger?.plan) {
+      const isStarted = Object.keys(ledger.tasks).length > 0 || entries.some(entry => !PREPARED_FILE.test(entry.name))
+      found.push({ ledger, mtimeMs: file.mtimeMs, isStarted })
     }
   }
 
-  return null
+  const newestFirst = found.sort((a, b) => b.mtimeMs - a.mtimeMs)
+  const [latest, before] = newestFirst.filter(one => one.isStarted)
+  if (latest && (await isOpenPlan(files, root, latest.ledger))) {
+    return latest
+  }
+  // Prepared since the started plan before the latest: older preparations were left
+  const next = newestFirst.filter(one => !one.isStarted && one.mtimeMs > (before?.mtimeMs ?? -Infinity)).pop()
+
+  return next ?? latest ?? null
+}
+
+const planPathOf = (root: string, named: string): string => (named.startsWith('/') ? named : `${root}/${named}`)
+
+const isOpenPlan = async (files: Files, root: string, ledger: Ledger): Promise<boolean> => {
+  const text = ledger.plan ? await files.read(planPathOf(root, ledger.plan)) : null
+
+  return text !== null && planStatus(planTasks(parsePlan(text).tasks, ledger), ledger) !== 'completed'
 }
 
 // Every plan next to the running one, in file name (date) order, each with its own ledger's tasks
@@ -321,14 +341,14 @@ export const loadPlanView = async (files: Files, cwd: string, now: number): Prom
     return null
   }
 
-  const newest = await newestLedger(files, `${root}/.superpowers/sdd`)
-  const named = newest?.ledger.plan
-  if (newest === null || !named) {
+  const current = await currentLedger(files, `${root}/.superpowers/sdd`, root)
+  const named = current?.ledger.plan
+  if (current === null || !named) {
     return null
   }
 
-  const { ledger, mtimeMs } = newest
-  const planPath = named.startsWith('/') ? named : `${root}/${named}`
+  const { ledger, mtimeMs } = current
+  const planPath = planPathOf(root, named)
   const planText = await files.read(planPath)
   if (planText === null) {
     return null
