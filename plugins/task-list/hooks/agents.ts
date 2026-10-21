@@ -85,3 +85,13 @@ export const roleUnderTask = (description: string): string => {
 
   return rest === '' ? description : rest
 }
+
+// What an agent is doing, for the folded line: „referral rework · Edit …/ReferralCard.tsx · 4 s ago“
+export const agentActivity = (agent: TrackedAgent, at: number, name: string): string => {
+  const quiet = at - agent.lastAt
+  if (quiet >= STUCK_MS) {
+    return `${name} · no activity for ${minutes(quiet)} min`
+  }
+
+  return agent.lastAction ? `${name} · ${agent.lastAction} · ${ago(quiet)}` : `${name} · started`
+}

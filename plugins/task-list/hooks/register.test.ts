@@ -543,3 +543,21 @@ test('the folded band spins while an agent works', async ($, on) => {
   expect(await (await $.ui.mount({ ...band(true), surface: 'desktop' })).findAll({ type: 'Svg' })).toHaveLength(1)
   expect((await shown($, 'terminal'))[0]).toMatch(/^[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] Phase 7/)
 })
+
+test('the folded band shows what the latest active agent is doing, and how many others run', async ($, on) => {
+  const { clock } = await agentSession($, on)
+  const builder = await spawnAgent($, 'Plan 3 Task 2: fix round builder')
+  const other = await spawnAgent($, 'Investigate the flaky e2e')
+  await agentActs($, other, { tool: 'Read', file_path: '/repo/e2e/shots-lib.ts' })
+  await clock.advance(2_000)
+  await agentActs($, builder, { tool: 'Edit', file_path: '/repo/packages/api/src/session.ts' })
+  await clock.advance(5_000)
+  await (await $.ui.mount({ ...band(true), surface: 'desktop' })).press({ key: 'minimize' })
+
+  for (const surface of SURFACES) {
+    const folded = (await shown($, surface))[0] ?? ''
+    expect(folded).toContain('Task (2/3) packages/api — OpenAPI types and the session-aware client · fix round 1')
+    // The builder acted last, on the breadcrumb's task: named by its role
+    expect(folded).toMatch(/ — fix round builder · Edit …\/src\/session\.ts · \d+ s ago \(\+1 agent\)$/)
+  }
+})

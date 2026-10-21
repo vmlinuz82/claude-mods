@@ -3,6 +3,7 @@ import type { AgentInfo, EngineInterface, Register, RenderInput, RenderElement }
 
 import type { PlanTask, PlanView, Task, Todo, TrackedAgent } from '../types'
 import {
+  agentActivity,
   agentText,
   ALIVE,
   describeAction,
@@ -366,7 +367,17 @@ export const register: Register = on => {
     // While an agent works the folded line spins in front
     const foldedSpinner = minimized && isWorking ? art.marker(true) : ''
     const byTask = agentsByTask(followed, running)
-    const others = followed.filter(agent => !byTask.matched.has(agent.id))
+    // Folded, the line also says what the latest active agent is doing, and how many others run
+    const latest = [...followed].sort((a, b) => b.lastAt - a.lastAt)[0]
+    const crumbTask = running?.tasks.find(task => task.status === 'in_progress') ?? running?.tasks.find(task => task.status === 'pending')
+    const others = followed.length - 1
+    const foldedActivity =
+      minimized && latest
+        ? ` — ${agentActivity(latest, at, crumbTask && byTask.of(crumbTask.n).includes(latest) ? roleUnderTask(latest.description) : latest.description)}${
+            others > 0 ? ` (+${others} agent${others === 1 ? '' : 's'})` : ''
+          }`
+        : ''
+    const unmatched = followed.filter(agent => !byTask.matched.has(agent.id))
 
     const mine = (
       <Box key="task-list" flexDirection="column">
@@ -376,6 +387,7 @@ export const register: Register = on => {
             <Text key="summary" bold={running !== null} dimColor={running === null} wrap="truncate-end">
               {foldedSpinner}
               {summary}
+              {foldedActivity}
             </Text>
           </Box>
           <Box key="actions" flexDirection="row" columnGap={2}>
@@ -402,14 +414,14 @@ export const register: Register = on => {
           (running === null
             ? todoLines($, e, hasTodos ? list : [])
             : taskTree($, e, running.tasks, hasTodos ? list : [], n => agentLines($, e, byTask.of(n), at, art, true)))}
-        {!minimized && others.length > 0 && (
+        {!minimized && unmatched.length > 0 && (
           <Box key="other-agents" flexDirection="column" paddingLeft={running === null && !hasTodos ? 0 : 2}>
             {(running !== null || hasTodos) && (
               <Text key="other-agents-title" dimColor>
                 Other agents
               </Text>
             )}
-            {agentLines($, e, others, at, art, false)}
+            {agentLines($, e, unmatched, at, art, false)}
           </Box>
         )}
       </Box>
