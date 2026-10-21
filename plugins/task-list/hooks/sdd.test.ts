@@ -232,6 +232,30 @@ test('loadPlanView keeps the running plan current while the next one is only pre
   expect((await loadPlanView(memoryFiles(done), '/repo', NOW))?.name).toBe('One product, many shops')
 })
 
+test('loadPlanView orders plans of the same day by when their workspace was made', async () => {
+  const ledger = (plan: string, lines = '') => `# SDD ledger — plan: docs/superpowers/plans/${plan}.md\n${lines}`
+  const disk = {
+    [`${PLANS}/2026-10-20-plan10.md`]: { text: '# Plan 10 — Growth Implementation Plan\n### Task 1: Lifetimes' },
+    [`${PLANS}/2026-10-21-feedback.md`]: { text: '# User feedback Implementation Plan\n### Task 1: Store messages' },
+    [`${PLANS}/2026-10-21-multi-shop.md`]: { text: '# One product, many shops Implementation Plan\n### Task 1: Groups' },
+    [`${PLANS}/2026-10-21-watch-archive.md`]: { text: '# Watch archive and search Implementation Plan\n### Task 1: Search' },
+    [`${SDD}/2026-10-21-feedback/progress.md`]: { text: ledger('2026-10-21-feedback', 'Task 1: complete'), mtimeMs: 150 },
+    [`${SDD}/2026-10-21-feedback/plan-path`]: { text: '', mtimeMs: 100 },
+    [`${SDD}/2026-10-21-watch-archive/progress.md`]: { text: ledger('2026-10-21-watch-archive', 'Task 1: dispatched'), mtimeMs: 400 },
+    [`${SDD}/2026-10-21-watch-archive/plan-path`]: { text: '', mtimeMs: 200 },
+    [`${SDD}/2026-10-21-multi-shop/progress.md`]: { text: ledger('2026-10-21-multi-shop'), mtimeMs: 300 },
+    [`${SDD}/2026-10-21-multi-shop/plan-path`]: { text: '', mtimeMs: 300 },
+  }
+  const view = await loadPlanView(memoryFiles(disk), '/repo', NOW)
+
+  expect(view?.groups.flatMap(group => group.plans.map(row => row.name))).toEqual([
+    'Plan 10 — Growth',
+    'User feedback',
+    'Watch archive and search',
+    'One product, many shops',
+  ])
+})
+
 test('loadPlanView counts a plan as running only while its ledger changed in the last day', async () => {
   const day = 24 * 60 * 60 * 1000
   const cases: [number, boolean][] = [

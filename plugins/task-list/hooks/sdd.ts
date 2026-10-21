@@ -286,6 +286,25 @@ const isOpenPlan = async (files: Files, root: string, ledger: Ledger): Promise<b
   return text !== null && planStatus(planTasks(parsePlan(text).tasks, ledger), ledger) !== 'completed'
 }
 
+// Plans by the date their file name starts with; plans of the same day by when their workspace was made (its oldest
+// file: the plan path and briefs are written once), since their names sort only by the alphabet. A plan with no
+// workspace left was cleaned up, so it is older: it goes first
+const inPlanOrder = async (files: Files, root: string, names: readonly string[]): Promise<string[]> => {
+  const keyed = await Promise.all(
+    names.map(async name => {
+      const workspace = await files.list(`${root}/.superpowers/sdd/${name.replace(/\.md$/, '')}`)
+      const made = workspace.filter(entry => entry.kind === 'file').map(entry => entry.mtimeMs)
+      const born = made.length > 0 ? Math.min(...made) : -Infinity
+
+      return { name, day: name.match(/^\d{4}-\d{2}-\d{2}/)?.[0] ?? name, born }
+    }),
+  )
+
+  return keyed
+    .sort((a, b) => a.day.localeCompare(b.day) || (a.born === b.born ? 0 : a.born < b.born ? -1 : 1) || a.name.localeCompare(b.name))
+    .map(one => one.name)
+}
+
 // Every plan next to the running one, in file name (date) order, each with its own ledger's tasks
 const allPlans = async (
   files: Files,
@@ -293,10 +312,11 @@ const allPlans = async (
   current: { path: string; ledger: Ledger },
 ): Promise<(PlanRow & { phase: string | null })[]> => {
   const dir = parentOf(current.path)
-  const names = (await files.list(dir))
-    .filter(entry => entry.kind === 'file' && entry.name.endsWith('.md'))
-    .map(entry => entry.name)
-    .sort()
+  const names = await inPlanOrder(
+    files,
+    root,
+    (await files.list(dir)).filter(entry => entry.kind === 'file' && entry.name.endsWith('.md')).map(entry => entry.name),
+  )
   const rows: (PlanRow & { phase: string | null })[] = []
   // Superpowers' workspaces are scratch and often cleaned: a plan without a ledger before the
   // running one was run before it, one after it is still to do
