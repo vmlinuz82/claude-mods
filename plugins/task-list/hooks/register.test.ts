@@ -509,6 +509,17 @@ test('describeAction names a Bash call by its description, else its command past
   }
 })
 
+test('a task an agent works on shows in progress before its ledger says so', async ($, on) => {
+  await agentSession($, on)
+  const before = (await shown($, 'terminal')).find(line => line.includes('Task 3 The three app shells')) ?? ''
+  expect(before).toContain('◻ Task 3')
+
+  await spawnAgent($, 'Plan 3 Task 3: shells builder')
+  const lines = await shown($, 'terminal')
+  expect(lines.find(line => line.includes('Task 3 The three app shells'))).toContain('◼ Task 3')
+  expect(lines.some(line => line.includes('shells builder · running 0 min'))).toBe(true)
+})
+
 test('an agent inside a long tool call is busy, not quiet, until the call returns', async ($, on) => {
   const { clock } = await agentSession($, on)
   const builder = await spawnAgent($, 'Plan 3 Task 2: fix round builder')

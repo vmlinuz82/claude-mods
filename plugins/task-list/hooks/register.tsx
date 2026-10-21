@@ -361,28 +361,29 @@ export const register: Register = on => {
     const at = await read($, clock)
     const art = await agentArt($, e)
     const isWorking = followed.some(agent => isActive(agent, at))
+    const byTask = agentsByTask(followed, running)
+    const shown = running === null ? null : withAgentsAtWork(running, byTask.of)
     const active = list.find(one => one.status === 'in_progress')
     const minimized = await read($, isMinimized)
     const setMinimized = (value: boolean) => update($, isMinimized, () => value)
     // Minimized: one line naming where the work is; the todo in progress, else the next to do
     const current = active ?? list.find(one => one.status !== 'completed')
     const summary = minimized
-      ? running === null
+      ? shown === null
         ? hasTodos
           ? `Todo (${current ? list.indexOf(current) + 1 : 0}/${list.length}) ${current?.subject ?? ''}`
           : `${followed.length} agent${followed.length === 1 ? '' : 's'} running`
-        : breadcrumb(running)
-      : running === null
+        : breadcrumb(shown)
+      : shown === null
         ? hasTodos
           ? `${done}/${list.length} done${active?.activeForm ? ` · ${active.activeForm}…` : ''}`
           : 'Agents'
-        : `${MARK.in_progress} ${planSummary(running.name, running.tasks)}`
+        : `${MARK.in_progress} ${planSummary(shown.name, shown.tasks)}`
     // While an agent works the folded line spins in front
     const foldedSpinner = minimized && isWorking ? art.marker(true) : ''
-    const byTask = agentsByTask(followed, running)
     // Folded, the line also says what the latest active agent is doing, and how many others run
     const latest = [...followed].sort((a, b) => b.lastAt - a.lastAt)[0]
-    const crumbTask = running?.tasks.find(task => task.status === 'in_progress') ?? running?.tasks.find(task => task.status === 'pending')
+    const crumbTask = shown?.tasks.find(task => task.status === 'in_progress') ?? shown?.tasks.find(task => task.status === 'pending')
     const others = followed.length - 1
     const foldedActivity =
       minimized && latest
@@ -425,9 +426,9 @@ export const register: Register = on => {
           </Box>
         </Box>
         {!minimized &&
-          (running === null
+          (shown === null
             ? todoLines($, e, hasTodos ? list : [])
-            : taskTree($, e, running.tasks, hasTodos ? list : [], n => agentLines($, e, byTask.of(n), at, art, true)))}
+            : taskTree($, e, shown.tasks, hasTodos ? list : [], n => agentLines($, e, byTask.of(n), at, art, true)))}
         {!minimized && unmatched.length > 0 && (
           <Box key="other-agents" flexDirection="column" paddingLeft={running === null && !hasTodos ? 0 : 2}>
             {(running !== null || hasTodos) && (
@@ -566,8 +567,8 @@ const taskTree = (
     <Box key="tasks" flexDirection="column" paddingLeft={2}>
       {planned.map(task => {
         const working = agentsUnder(task.n)
-        // An unreviewed task with an agent on it (its reviewer, say) is being worked on again
-        const status = task.status === 'unreviewed' && working.length > 0 ? 'in_progress' : task.status
+        // A task with an agent on it (its implementer, or the reviewer of an unreviewed one) is being worked on
+        const status = task.status !== 'completed' && working.length > 0 ? 'in_progress' : task.status
 
         return (
           <Box key={`task-${task.n}`} flexDirection="column">
@@ -604,6 +605,14 @@ const agentArt = async ($: EngineInterface, e: RenderInput) => {
 }
 
 // Agents by the plan task they work on, from their descriptions; the rest are no task's
+// A task with an agent on it is being worked on, whatever its ledger says yet: in the tree and the folded line
+const withAgentsAtWork = (view: PlanView, agentsOf: (n: number) => readonly TrackedAgent[]): PlanView => ({
+  ...view,
+  tasks: view.tasks.map(task =>
+    task.status !== 'completed' && task.status !== 'in_progress' && agentsOf(task.n).length > 0 ? { ...task, status: 'in_progress' as const } : task,
+  ),
+})
+
 const agentsByTask = (followed: readonly TrackedAgent[], view: PlanView | null) => {
   const taskOf = new Map(
     followed.map(agent => [agent.id, view === null ? null : taskOfAgent(agent.description, view.name, view.tasks)]),
