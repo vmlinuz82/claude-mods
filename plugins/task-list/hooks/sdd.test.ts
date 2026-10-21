@@ -445,3 +445,31 @@ test('a task completed in a later sentence of a line counts, and MERGED counts a
   // „Ready to merge“ is a review verdict, not a merge
   expect(parseLedger('Follow-up re-review: Ready to merge (0I/4M parked).').isMerged).toBe(undefined)
 })
+
+test('a task is done at an approved review or at `Task N complete` written without a colon', () => {
+  const ledger = parseLedger(
+    [
+      'Task 1: DONE_WITH_CONCERNS — eeb7772 (WatchLifetimeTest 13 OK, lint clean)',
+      'Task 1 review: APPROVED (minor, carried to the final wave: VerifyEmailControllerTest message says a year)',
+      'Task 2: review fix — backend 614a495 (tests 169 OK, lint clean). Task 2 complete (backend 56aba02..614a495).',
+      'Task 3: fix round — backend a280be4 (trial query moved). Task 3 complete (f680dea..a280be4). Task 4 next.',
+      'Task 5: DONE — backend 4d8159f (trial starts on verify)',
+      'Task 6: review (opus) ❌/Changes needed — the choice is read outside the lock; quality approved otherwise',
+      'Task 7 review: spec ✅, quality approved (Minor only)',
+      'Task 8 re-review 1: Approved',
+      'Task 9 review: Not ready (0C/1I/3M)',
+    ].join('\n'),
+  )
+  const done = (n: number) => ledger.tasks[n]?.isComplete ?? false
+
+  expect([1, 2, 3, 5, 6, 7, 8, 9].map(n => [n, done(n)])).toEqual([
+    [1, true],
+    [2, true],
+    [3, true],
+    [5, false],
+    [6, false],
+    [7, true],
+    [8, true],
+    [9, false],
+  ])
+})
