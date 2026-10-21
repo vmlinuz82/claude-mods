@@ -17,7 +17,11 @@ Two Claude Code mods, installed separately. Both work in the terminal and in the
 
 ## Prerequisites
 
-- Claude Code **2.1.289** or newer (`claude --version`). Older builds don't load mods; `claude update` fixes that. The desktop app ships its own build, so only a terminal `claude` is likely to be behind.
+- Claude Code **2.1.286** or newer (`claude --version`). The desktop app ships its own build, so only a terminal `claude` is likely to be behind.
+- **On 2.1.284 or 2.1.285 the mods are there but switched off** — add `"CLAUDE_CODE_ENABLE_FUNCTION_HOOKS": "1"` to the `env` block of `~/.claude/settings.json` and start a new session.
+- **Still on an old version after `claude update`?** `which -a claude` shows which copy the terminal starts:
+  - `/opt/homebrew/…` — installed with Homebrew, which `claude update` doesn't touch. `brew upgrade --cask claude-code` updates it.
+  - a path with `node_modules` or `.nvm` — an old npm install starting before the updated copy. `npm uninstall -g @anthropic-ai/claude-code` removes it.
 
 ## Install
 
