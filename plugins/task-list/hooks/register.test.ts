@@ -535,6 +535,24 @@ test('an agent on a range of tasks works on each of them and shows once, under t
   expect(lines.find(line => line.includes('Task 3 The three app shells'))).toContain('◼ Task 3 The three app shells · review')
 })
 
+test('a todo naming a plan sits in line with the tasks, after them, not under the running task', async ($, on) => {
+  await agentSession($, on)
+  await $.tool.call({
+    tool: 'TodoWrite',
+    todos: [
+      { content: 'Wire the session client', status: 'in_progress', activeForm: 'Wiring' },
+      { content: 'Plan 4: backoffice (11 tasks)', status: 'pending', activeForm: 'Starting Plan 4' },
+    ],
+  } as never)
+  const lines = await shown($, 'terminal')
+  const at = (text: string) => lines.findIndex(line => line.includes(text))
+
+  // The task's own todo under the running Task 2, the next plan after the last task
+  expect(at('Wire the session client')).toBeGreaterThan(at('Task 2 '))
+  expect(at('Wire the session client')).toBeLessThan(at('Task 3 '))
+  expect(at('Plan 4: backoffice')).toBeGreaterThan(at('Task 3 '))
+})
+
 test('the todos go under the plan, not one task, while several tasks run in parallel', async ($, on) => {
   await agentSession($, on)
   await $.tool.call({ tool: 'TodoWrite', todos: [{ content: 'Merge the plan', status: 'pending', activeForm: 'Merging' }] } as never)

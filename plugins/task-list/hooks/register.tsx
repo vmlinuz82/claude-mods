@@ -556,14 +556,20 @@ const taskTree = (
   agentsUnder: (n: number) => ReturnType<typeof agentLines>,
 ) => {
   const { Box, Text } = $.ui.resolve(e)
-  // The todos are the running task's: under it while one task runs, under the plan while several run in parallel
+  // The todos are the running task's: under it while one task runs, under the plan while several run in parallel.
+  // A todo naming a plan (`Review Plan 11, merge into main`, `Plan 12: …`) is the plans' work, never a task's
   const running = planned.filter(task => task.status === 'in_progress')
   const activeTask = running.length === 1 ? running[0] : undefined
-  const todoBox = todos.length > 0 && (
-    <Box key="todos" flexDirection="column" paddingLeft={2}>
-      {todoLines($, e, todos)}
-    </Box>
-  )
+  const isPlansTodo = (todo: Task) => /\bPlan\s+[0-9]/i.test(todo.subject)
+  const todoBox = (key: string, shown: readonly Task[], indent: number) =>
+    shown.length > 0 && (
+      <Box key={key} flexDirection="column" paddingLeft={indent}>
+        {todoLines($, e, shown)}
+      </Box>
+    )
+  const taskTodos = todoBox('todos', todos.filter(todo => !isPlansTodo(todo)), 2)
+  // In line with the tasks, not under the last one
+  const plansTodos = todoBox('plan-todos', todos.filter(isPlansTodo), 0)
 
   return (
     <Box key="tasks" flexDirection="column" paddingLeft={2}>
@@ -584,11 +590,12 @@ const taskTree = (
                 {working}
               </Box>
             )}
-            {task === activeTask && todoBox}
+            {task === activeTask && taskTodos}
           </Box>
         )
       })}
-      {activeTask === undefined && todoBox}
+      {activeTask === undefined && taskTodos}
+      {plansTodos}
     </Box>
   )
 }
