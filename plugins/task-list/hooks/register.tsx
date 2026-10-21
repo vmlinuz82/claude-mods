@@ -13,7 +13,7 @@ import {
   roleUnderTask,
   SPINNER,
   SPINNER_SVG,
-  taskOfAgent,
+  tasksOfAgent,
 } from './agents'
 import { breadcrumb, isPlanTodo, loadPlanView } from './sdd'
 
@@ -362,7 +362,7 @@ export const register: Register = on => {
     const art = await agentArt($, e)
     const isWorking = followed.some(agent => isActive(agent, at))
     const byTask = agentsByTask(followed, running)
-    const shown = running === null ? null : withAgentsAtWork(running, byTask.of)
+    const shown = running === null ? null : withAgentsAtWork(running, byTask.on)
     const active = list.find(one => one.status === 'in_progress')
     const minimized = await read($, isMinimized)
     const setMinimized = (value: boolean) => update($, isMinimized, () => value)
@@ -511,7 +511,7 @@ export const register: Register = on => {
                     {row.status === 'on_hold' ? ' · left open' : ''}
                   </Text>
                   {isCurrentGroup &&
-                    taskTree($, e, row.tasks, row.isCurrent ? list : [], n =>
+                    taskTree($, e, row.isCurrent ? withAgentsAtWork(row, byTask.on).tasks : row.tasks, row.isCurrent ? list : [], n =>
                       row.isCurrent ? agentLines($, e, byTask.of(n), at, art, true) : [],
                     )}
                 </Box>
@@ -604,23 +604,23 @@ const agentArt = async ($: EngineInterface, e: RenderInput) => {
   }
 }
 
-// Agents by the plan task they work on, from their descriptions; the rest are no task's
 // A task with an agent on it is being worked on, whatever its ledger says yet: in the tree and the folded line
-const withAgentsAtWork = (view: PlanView, agentsOf: (n: number) => readonly TrackedAgent[]): PlanView => ({
+const withAgentsAtWork = <T extends { tasks: PlanTask[] }>(view: T, agentsOf: (n: number) => readonly TrackedAgent[]): T => ({
   ...view,
   tasks: view.tasks.map(task =>
     task.status !== 'completed' && task.status !== 'in_progress' && agentsOf(task.n).length > 0 ? { ...task, status: 'in_progress' as const } : task,
   ),
 })
 
+// Agents by the plan tasks they work on, from their descriptions; the rest are no task's. One on several tasks
+// (`Review tasks 1–4`) works on all of them, and its line shows once, under the first
 const agentsByTask = (followed: readonly TrackedAgent[], view: PlanView | null) => {
-  const taskOf = new Map(
-    followed.map(agent => [agent.id, view === null ? null : taskOfAgent(agent.description, view.name, view.tasks)]),
-  )
+  const tasksOf = new Map(followed.map(agent => [agent.id, view === null ? [] : tasksOfAgent(agent.description, view.name, view.tasks)]))
 
   return {
-    matched: new Set(followed.filter(agent => taskOf.get(agent.id) != null).map(agent => agent.id)),
-    of: (n: number) => followed.filter(agent => taskOf.get(agent.id) === n),
+    matched: new Set(followed.filter(agent => (tasksOf.get(agent.id) ?? []).length > 0).map(agent => agent.id)),
+    of: (n: number) => followed.filter(agent => tasksOf.get(agent.id)?.[0] === n),
+    on: (n: number) => followed.filter(agent => tasksOf.get(agent.id)?.includes(n)),
   }
 }
 

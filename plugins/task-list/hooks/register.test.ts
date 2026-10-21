@@ -3,7 +3,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 
 import type { Files } from './sdd'
-import { agentActivity, agentText, describeAction } from './agents'
+import { agentActivity, agentText, describeAction, tasksOfAgent } from './agents'
 import { memoryFiles, NOW, PHASE_7_DISK, SDD } from './sdd.fixtures'
 
 const SURFACES = ['desktop', 'terminal'] as const
@@ -518,6 +518,35 @@ test('a task an agent works on shows in progress before its ledger says so', asy
   const lines = await shown($, 'terminal')
   expect(lines.find(line => line.includes('Task 3 The three app shells'))).toContain('◼ Task 3')
   expect(lines.some(line => line.includes('shells builder · running 0 min'))).toBe(true)
+})
+
+test('an agent on a range of tasks works on each of them and shows once, under the first', async ($, on) => {
+  await agentSession($, on)
+  await spawnAgent($, 'Review Plan 3 tasks 1–3')
+  const lines = await shown($, 'terminal')
+  const at = (text: string) => lines.findIndex(line => line.includes(text))
+
+  expect(lines.find(line => line.includes('Task 3 The three app shells'))).toContain('◼ Task 3')
+  expect(lines.filter(line => line.includes('Review Plan 3 tasks 1–3'))).toHaveLength(1)
+  expect(at('Review Plan 3 tasks 1–3')).toBeGreaterThan(at('Task 1 '))
+  expect(at('Review Plan 3 tasks 1–3')).toBeLessThan(at('Task 2 '))
+  expect(lines.some(line => line.includes('Other agents'))).toBe(false)
+})
+
+test('tasksOfAgent reads single tasks, ranges and lists, and skips another plan', async () => {
+  const tasks = [1, 2, 3, 4, 5].map(n => ({ n, title: `T${n}`, status: 'pending' as const }))
+  const cases: [string, string, number[]][] = [
+    ['Plan 10 Task 4: referral invites', 'Plan 10 — Growth', [4]],
+    ['Review Plan 11 tasks 1–4', 'Watch archive and search', [1, 2, 3, 4]],
+    ['Plan 11 Tasks 1-3: search, archive (backend)', 'Watch archive and search', [1, 2, 3]],
+    ['Fix Tasks 2, 3 and 5', 'Watch archive and search', [2, 3, 5]],
+    ['Tasks 4 to 9', 'Watch archive and search', [4, 5]],
+    ['Plan 9 Task 2 builder', 'Plan 10 — Growth', []],
+    ['Investigate the flaky e2e', 'Plan 10 — Growth', []],
+  ]
+  for (const [description, plan, expected] of cases) {
+    expect(tasksOfAgent(description, plan, tasks)).toEqual(expected)
+  }
 })
 
 test('an agent inside a long tool call is busy, not quiet, until the call returns', async ($, on) => {

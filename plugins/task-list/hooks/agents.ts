@@ -73,19 +73,30 @@ export const agentText = (agent: TrackedAgent, at: number, name: string = agent.
   return agent.lastAction ? `${running} · ${lastStep(agent, quiet)}` : running
 }
 
-// Which plan task an agent works on, from its description (`Plan 10 Task 10: referral invites`, `Review Task 7`):
-// the task named, when the running plan has it and the description names no other plan
-export const taskOfAgent = (description: string, planName: string, tasks: readonly PlanTask[]): number | null => {
-  const named = description.match(/\bTask\s+(\d+)\b/i)?.[1]
-  if (named === undefined || !tasks.some(task => task.n === Number(named))) {
-    return null
+// Which plan tasks an agent works on, from its description (`Plan 10 Task 10: referral invites`, `Review Plan 11
+// tasks 1–4`, `Tasks 2, 3 and 5`): the tasks named that the running plan has, when the description names no other plan
+export const tasksOfAgent = (description: string, planName: string, tasks: readonly PlanTask[]): number[] => {
+  const named = description.match(/\bTasks?\s+(\d+(?:\s*(?:[,&+–—-]|and|to)\s*\d+)*)/i)?.[1]
+  if (named === undefined) {
+    return []
   }
   const agentPlan = description.match(/\bPlan\s+([0-9][\w.]*)/i)?.[1]
   const runningPlan = planName.match(/\bPlan\s+([0-9][\w.]*)/i)?.[1]
+  if (agentPlan !== undefined && runningPlan !== undefined && agentPlan.toLowerCase() !== runningPlan.toLowerCase()) {
+    return []
+  }
 
-  return agentPlan !== undefined && runningPlan !== undefined && agentPlan.toLowerCase() !== runningPlan.toLowerCase()
-    ? null
-    : Number(named)
+  // `1–4` and `1 to 4` are ranges, the rest single tasks
+  const numbers: number[] = []
+  for (const [, from, to] of named.matchAll(/(\d+)(?:\s*(?:[–—-]|to)\s*(\d+))?/gi)) {
+    const first = Number(from)
+    const last = to === undefined ? first : Math.max(first, Number(to))
+    for (let n = first; n <= last; n++) {
+      numbers.push(n)
+    }
+  }
+
+  return numbers.filter(n => tasks.some(task => task.n === n))
 }
 
 // Under its task the agent's line names what it does there: „Plan 10 Task 10: referral invites“ → „referral invites“
