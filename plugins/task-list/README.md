@@ -28,6 +28,22 @@ claude plugin install task-list@claude-mods
 - The checklist hides as soon as every task is done.
 - **`×` closes the checklist** until the list changes: a new task, or one starting or finishing, brings it back.
 
+## Background agents
+
+The band also shows the background agents running in the session — under the plan task each one works on, matched by its description (`Plan 10 Task 10: referral invites` → Task 10), and the rest under „Other agents“:
+
+```
+◼ Task 10 Referral invites · implementing
+  ⠹ referral invites · running 5 min · Bash: npx vitest run apps/client · 9 s ago
+Other agents
+  ◦ Investigate the flaky e2e · running 2 min · Read …/e2e/shots-lib.ts · 1 min ago
+```
+
+- **The marker spins while the agent is working right now** (it acted in the last 30 seconds): an animated spinner in the desktop app, a text spinner in the terminal. `◦` means running but quiet; the folded line spins too while any agent works.
+- **No activity for 5 minutes turns its line amber** („no activity for 7 min“): a running agent that may be stuck.
+- An agent shows when it starts or first acts, and leaves when it finishes, fails or is stopped; a finished agent that could be resumed (waiting or idle) is not running.
+- The times update every 5 seconds; the engine's agent list is read every 15 seconds. Token counts are left to the app's own Background tasks panel.
+
 ## Superpowers plans
 
 While [superpowers](https://github.com/obra/superpowers) runs a plan with subagent-driven development, the band shows that plan, its tasks and the todos of the task in progress:
@@ -52,7 +68,7 @@ Without a phase the line starts at `Plan`; with only a todo list it reads `Todo 
 **Details** (or `/task-tree`) opens a pane with the whole tree: every phase and plan, and the running plan's phase down to each task, done, current and to do.
 
 - It reads superpowers' own files: the plans (`docs/superpowers/plans/*.md`, `### Task N:` headings) and each plan's ledger (`.superpowers/sdd/<plan>/progress.md`). Superpowers itself is unchanged.
-- **The running plan is the one whose ledger was written last,** found in the session's folder or the nearest parent with a `.superpowers` folder. A task is done at its `Task N: complete` line (colon optional) or at an approved review with no problem reported beside it; a task in progress shows its latest step (implementing, review, fix round 2…). Tasks may run in parallel, each with its own `◼`. A task the ledger defers (`Ruling: Task 6 … deferred to after Task 7`) shows `◐ … · on hold` until its next entry. The folded line names the first task in progress and adds `(+n in parallel)`.
+- **The running plan is the one whose ledger was written last,** found in the session's folder or the nearest parent with a `.superpowers` folder. A task is done at its `Task N: complete` line (colon optional) or at an approved review with no problem reported beside it; a task in progress shows its latest step (implementing, review, fix round 2…). Tasks may run in parallel, each with its own `◼`. A task the ledger defers (`Ruling: Task 6 … deferred to after Task 7`) shows `◐ … · on hold` until its next entry, and a task implemented but never reviewed while a later task is under way shows `◐ … · implemented, not reviewed`. The folded line names the first task in progress and adds `(+n in parallel)`.
 - **Phases come from the plan titles:** `Phase 7 · Plan 3 — …`, `… Phase 4 — …` and `… (Phase 1.5)` all work. A sub-phase joins its main phase (3a–3e are Phase 3, 1.5 is Phase 1) and keeps its label in the plan name: `3e · Affiliate Links`. Plans without a phase are listed together.
 - **A `MERGED …` line in a ledger marks the whole plan done.** Only the running plan can be in progress: another plan with open tasks shows `◐ … · left open` in the pane.
 - **Superpowers' workspaces are scratch and get cleaned:** a plan with no ledger left counts as done when it comes before the running plan (by file name), and to do after it. Ledgers from before superpowers' `# SDD ledger — plan:` first line are read the same way.

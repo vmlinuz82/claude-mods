@@ -1,12 +1,11 @@
 # claude-mods
 
-Three Claude Code mods, installed separately. All work in the terminal and in the desktop app's Code tab.
+Two Claude Code mods, installed separately. Both work in the terminal and in the desktop app's Code tab.
 
 | Mod | What it shows |
 |---|---|
-| [`task-list`](plugins/task-list/README.md) | The session's tasks as a checklist above the prompt |
+| [`task-list`](plugins/task-list/README.md) | The session's tasks as a checklist above the prompt, with the background agents working on them |
 | [`skill-usage`](plugins/skill-usage/README.md) | The skills and MCP servers used in the session, with a full table in a pane |
-| [`agent-activity`](plugins/agent-activity/README.md) | The running background agents: what each is doing right now and whether it is still active |
 
 ### `task-list`
 
@@ -36,10 +35,6 @@ claude plugin install task-list@claude-mods
 
 ```bash
 claude plugin install skill-usage@claude-mods
-```
-
-```bash
-claude plugin install agent-activity@claude-mods
 ```
 
 Start a new session (or run `/reload-plugins` in a running one) to see them.

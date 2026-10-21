@@ -502,3 +502,24 @@ test('a task named mid-line counts only when the part records a step or a comple
 
   expect(Object.keys(ledger.tasks).map(Number)).toEqual([2, 4])
 })
+
+test('a task implemented with no review while a later task is under way is unreviewed', () => {
+  const headings = [5, 8, 9, 10, 11].map(n => ({ n, title: `T${n}` }))
+  const ledger = parseLedger(
+    [
+      'Task 5: DONE — backend 4d8159f',
+      'Task 9: DONE_WITH_CONCERNS — backend d5708c8',
+      'Task 8: DONE_WITH_CONCERNS — backend 388b421. Task 10 dispatched.',
+    ].join('\n'),
+  )
+
+  expect(planTasks(headings, ledger).map(task => [task.n, task.status])).toEqual([
+    [5, 'unreviewed'],
+    [8, 'unreviewed'],
+    [9, 'unreviewed'],
+    [10, 'in_progress'],
+    [11, 'pending'],
+  ])
+  // The newest task, just implemented with nothing after it, is still the one in progress
+  expect(planTasks(headings, parseLedger('Task 10: DONE — backend aaa')).find(task => task.n === 10)?.status).toBe('in_progress')
+})

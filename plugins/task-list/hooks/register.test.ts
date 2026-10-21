@@ -1,5 +1,6 @@
 import type { On, RenderElement } from 'claude-code'
-import { expect, test } from 'claude-code/testing'
+import { expect, mock, test } from 'claude-code/testing'
+import type { Engine } from 'claude-code/testing'
 
 import type { Files } from './sdd'
 import { memoryFiles, NOW, PHASE_7_DISK, SDD } from './sdd.fixtures'
@@ -424,4 +425,121 @@ test('a task the ledger defers shows on hold', async ($, on) => {
     // Only the task being worked on is bold
     expect(texts.map(one => one.props.bold)).toEqual([true, false, false, true])
   }
+})
+
+// Agents beside the plan: a session whose engine starts, lists and runs them, on a clock the test moves
+const agentSession = async ($: Engine, on: On) => {
+  const statuses = new Map<string, string>()
+  const clock = mock.clock(on, { now: NOW })
+  let next = 0
+  engineBand(on)
+  on('session.start', async (_$, e) => e)
+  on('command.register', async (_$, e) => ({ value: { command: e.name } }))
+  on('tool.list', async () => ({ value: [{ name: 'TodoWrite', description: 'todo', mcp: false }] }))
+  on('fs.exists', async (_$, e) => ({ value: await memoryFiles(PHASE_7_DISK).exists(e.path) }))
+  on('fs.list', async (_$, e) => ({ value: (await memoryFiles(PHASE_7_DISK).list(e.path)).map(entry => ({ ...entry, size: 0, isLink: false })) }) as never)
+  on('fs.read', async (_$, e) => {
+    const text = await memoryFiles(PHASE_7_DISK).read(e.path)
+    if (text === null) {
+      throw new Error(`ENOENT: ${e.path}`)
+    }
+
+    return { value: text }
+  })
+  on('agent.spawn', async () => {
+    const agentId = `agent-${++next}`
+    statuses.set(agentId, 'running')
+
+    return { model: 'claude-sonnet-5-5', agentId }
+  })
+  on('agent.list', async () => ({
+    value: [...statuses].map(([id, status]) => ({ id, description: id, type: 'general-purpose', status })),
+  }) as never)
+  on('tool.call', async () => ({ result: 'ok' }) as never)
+  await $.session.start({ cwd: '/repo', surface: 'desktop', isInteractive: true })
+
+  return { statuses, clock }
+}
+
+const spawnAgent = async ($: Engine, description: string): Promise<string> =>
+  ((await $.agent.spawn({ prompt: 'do it', description } as never)) as { agentId?: string }).agentId ?? ''
+
+const agentActs = ($: Engine, agentId: string, input: Record<string, unknown>) => $.tool.call({ ...input, agentId } as never)
+
+const shown = async ($: Engine, surface: (typeof SURFACES)[number]) =>
+  (await (await $.ui.mount({ ...band(true), surface })).findAll({ type: 'Text' })).map(one => one.text)
+
+test('an agent working on a plan task shows under that task, others under „Other agents“', async ($, on) => {
+  const { clock } = await agentSession($, on)
+  const builder = await spawnAgent($, 'Plan 3 Task 2: fix round builder')
+  const other = await spawnAgent($, 'Investigate the flaky e2e')
+  await clock.advance(5 * 60_000)
+  await agentActs($, builder, { tool: 'Bash', command: 'npx vitest run apps/client' })
+  await agentActs($, other, { tool: 'Read', file_path: '/repo/e2e/shots-lib.ts' })
+  await clock.advance(10_000)
+
+  for (const surface of SURFACES) {
+    const lines = await shown($, surface)
+    const at = (text: string) => lines.findIndex(line => line.includes(text))
+    // Under Task 2, before Task 3
+    expect(at('fix round builder · running 5 min · Bash: npx vitest run apps/client · 10 s ago')).toBeGreaterThan(at('Task 2 packages/api'))
+    expect(at('fix round builder')).toBeLessThan(at('Task 3 The three app shells'))
+    // The unmatched agent at the bottom
+    expect(at('Other agents')).toBeGreaterThan(at('Task 3 The three app shells'))
+    expect(lines[lines.length - 1]).toContain('Investigate the flaky e2e · running 5 min · Read …/e2e/shots-lib.ts · 10 s ago')
+  }
+})
+
+test('an agent line spins while it works, turns amber when quiet for 5 minutes and leaves when finished', async ($, on) => {
+  const { statuses, clock } = await agentSession($, on)
+  const builder = await spawnAgent($, 'Plan 3 Task 2: fix round builder')
+  await agentActs($, builder, { tool: 'Edit', file_path: '/repo/packages/api/src/session.ts' })
+
+  const desktop = await $.ui.mount({ ...band(true), surface: 'desktop' })
+  expect(await desktop.findAll({ type: 'Svg' })).toHaveLength(1)
+  const spinning = (await shown($, 'terminal')).find(line => line.includes('fix round builder')) ?? ''
+  expect(spinning).toMatch(/^[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] /)
+
+  await clock.advance(7 * 60_000)
+  const ui = await $.ui.mount({ ...band(true), surface: 'desktop' })
+  const stuck = (await ui.findAll({ type: 'Text' })).find(one => one.text.includes('fix round builder'))
+  expect(stuck?.text).toContain('no activity for 7 min')
+  expect(stuck?.props.color).toBe('warning')
+
+  statuses.set(builder, 'completed')
+  await clock.advance(15_000)
+  expect((await shown($, 'desktop')).join('\n')).not.toContain('fix round builder')
+})
+
+test('with no plan running the band still shows the agents', async ($, on) => {
+  const statuses = new Map<string, string>()
+  const clock = mock.clock(on, { now: NOW })
+  engineBand(on)
+  on('session.start', async (_$, e) => e)
+  on('command.register', async (_$, e) => ({ value: { command: e.name } }))
+  on('tool.list', async () => ({ value: [{ name: 'TodoWrite', description: 'todo', mcp: false }] }))
+  on('agent.spawn', async () => {
+    statuses.set('agent-1', 'running')
+
+    return { model: 'claude-sonnet-5-5', agentId: 'agent-1' }
+  })
+  on('agent.list', async () => ({ value: [...statuses].map(([id, status]) => ({ id, description: id, type: 'general-purpose', status })) }) as never)
+  on('tool.call', async () => ({ result: 'ok' }) as never)
+  await $.session.start({ cwd: '/elsewhere', surface: 'desktop', isInteractive: true })
+  await spawnAgent($, 'Investigate the flaky e2e')
+  await clock.advance(1_000)
+
+  for (const surface of SURFACES) {
+    expect((await shown($, surface)).join('\n')).toContain('Investigate the flaky e2e · running 0 min')
+  }
+})
+
+test('the folded band spins while an agent works', async ($, on) => {
+  await agentSession($, on)
+  const builder = await spawnAgent($, 'Plan 3 Task 2: fix round builder')
+  await agentActs($, builder, { tool: 'Bash', command: 'ls' })
+  await (await $.ui.mount({ ...band(true), surface: 'desktop' })).press({ key: 'minimize' })
+
+  expect(await (await $.ui.mount({ ...band(true), surface: 'desktop' })).findAll({ type: 'Svg' })).toHaveLength(1)
+  expect((await shown($, 'terminal'))[0]).toMatch(/^[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] Phase 7/)
 })

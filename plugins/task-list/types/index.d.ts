@@ -17,8 +17,8 @@ export type Todo = {
 export type PlanTask = {
   n: number
   title: string
-  // on_hold: started and unfinished while a later task is already under way
-  status: TaskStatus | 'on_hold'
+  // on_hold: deferred by the ledger; unreviewed: implemented, no review yet, while a later task is under way
+  status: TaskStatus | 'on_hold' | 'unreviewed'
   // The latest ledger step of a task in progress: implementing, review, fix round 2…
   step?: string
 }
@@ -48,11 +48,34 @@ export type PlanView = {
   groups: PhaseGroup[]
 }
 
+// One running background agent, as this mod follows it
+export type TrackedAgent = {
+  id: string
+  // The Agent tool's description: „Plan 10 Task 10: referral invites“
+  description: string
+  // When it started (or was first seen acting), and when it last did something
+  startedAt: number
+  lastAt: number
+  // Its latest tool call, shortened: „Edit …/profile/PlanCard.tsx“; null before its first
+  lastAction: string | null
+}
+
 declare module 'claude-code' {
   interface PluginState {
     // closedOn: what the band showed when it was closed; the band stays hidden until it changes
     // isMinimized: the band folded to one breadcrumb line
-    'task-list': { tasks: Task[]; closedOn: string | null; plan: PlanView | null; cwd: string | null; isMinimized: boolean }
+    // agents: the running background agents; clock: the time as last read, for „running 5 min“ and „9 s ago“;
+    // frame: the terminal spinner's step
+    'task-list': {
+      tasks: Task[]
+      closedOn: string | null
+      plan: PlanView | null
+      cwd: string | null
+      isMinimized: boolean
+      agents: TrackedAgent[]
+      clock: number
+      frame: number
+    }
   }
 
   interface McpToolInputs {

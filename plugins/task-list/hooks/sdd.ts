@@ -167,8 +167,8 @@ export const splitTitle = (title: string): { phase: string | null; name: string 
   return { phase: null, name: bare.trim() }
 }
 
-export const planTasks = (headings: readonly PlanHeading[], ledger: Ledger): PlanTask[] =>
-  headings.map(({ n, title }): PlanTask => {
+export const planTasks = (headings: readonly PlanHeading[], ledger: Ledger): PlanTask[] => {
+  const tasks = headings.map(({ n, title }): PlanTask => {
     const entry = ledger.tasks[n]
     if (entry?.isComplete || ledger.isMerged) {
       return { n, title, status: 'completed' }
@@ -182,6 +182,13 @@ export const planTasks = (headings: readonly PlanHeading[], ledger: Ledger): Pla
 
     return entry.step === undefined ? { n, title, status } : { n, title, status, step: entry.step }
   })
+  // A task implemented but never reviewed, while a later task is already under way, is not being worked on
+  const newestStarted = Math.max(0, ...tasks.filter(task => task.status !== 'pending').map(task => task.n))
+
+  return tasks.map(task =>
+    task.status === 'in_progress' && task.step === 'implemented' && task.n < newestStarted ? { ...task, status: 'unreviewed' } : task,
+  )
+}
 
 const normalized = (text: string): string => text.trim().toLowerCase()
 

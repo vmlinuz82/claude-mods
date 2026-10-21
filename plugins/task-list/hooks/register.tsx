@@ -1,7 +1,19 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register, RenderInput, RenderElement } from 'claude-code'
+import type { AgentInfo, EngineInterface, Register, RenderInput, RenderElement } from 'claude-code'
 
-import type { PlanTask, PlanView, Task, Todo } from '../types'
+import type { PlanTask, PlanView, Task, Todo, TrackedAgent } from '../types'
+import {
+  agentText,
+  ALIVE,
+  describeAction,
+  GRACE_MS,
+  isActive,
+  isStuck,
+  roleUnderTask,
+  SPINNER,
+  SPINNER_SVG,
+  taskOfAgent,
+} from './agents'
 import { breadcrumb, isPlanTodo, loadPlanView } from './sdd'
 
 const tasks = atom({ plugin: 'task-list', key: 'tasks' } as const, [])
@@ -10,8 +22,17 @@ const plan = atom({ plugin: 'task-list', key: 'plan' } as const, null)
 const cwd = atom({ plugin: 'task-list', key: 'cwd' } as const, null)
 // The band folded to one line, for this session only: every new session starts expanded
 const isMinimized = atom({ plugin: 'task-list', key: 'isMinimized' } as const, false)
+const agents = atom({ plugin: 'task-list', key: 'agents' } as const, [])
+const clock = atom({ plugin: 'task-list', key: 'clock' } as const, 0)
+const frame = atom({ plugin: 'task-list', key: 'frame' } as const, 0)
 
-const snapshot = (running: PlanView | null, list: readonly Task[]): string => JSON.stringify({ running, list })
+// The clock is read every TICK_MS (for „9 s ago“), the engine's agent list every LIST_EVERY ticks
+const TICK_MS = 5_000
+const LIST_EVERY = 3
+const SPIN_MS = 250
+
+const snapshot = (running: PlanView | null, list: readonly Task[], followed: readonly TrackedAgent[]): string =>
+  JSON.stringify({ running, list, agents: followed.map(agent => agent.id) })
 
 // A tool call that may have written a superpowers ledger: superpowers appends to it from Bash
 const touchesLedger = (input: unknown): boolean => /\.superpowers|progress\.md|sdd-workspace/.test(JSON.stringify(input))
@@ -34,7 +55,72 @@ const refreshPlan = async ($: EngineInterface): Promise<void> => {
   await update($, plan, () => running)
 }
 
-const MARK = { pending: '◻', in_progress: '◼', completed: '✔', on_hold: '◐' } as const
+const MARK = { pending: '◻', in_progress: '◼', completed: '✔', on_hold: '◐', unreviewed: '◐' } as const
+
+let spinner: { cancel: () => void } | null = null
+
+// The terminal spinner steps only while some agent is active
+const keepSpinning = async ($: EngineInterface): Promise<void> => {
+  const at = await $.clock.now()
+  const isWorking = (await read($, agents)).some(agent => isActive(agent, at))
+  if (isWorking && spinner === null) {
+    spinner = $.clock.every(SPIN_MS, () => {
+      void update($, frame, step => step + 1)
+      void keepSpinning($)
+    })
+  }
+  if (!isWorking && spinner !== null) {
+    spinner.cancel()
+    spinner = null
+  }
+}
+
+// The engine's list says which agents still run: finished, failed, stopped and waiting ones leave. Agents are added
+// only when this mod sees them start or act, never from the list alone (it keeps finished agents for a while)
+const syncAgents = async ($: EngineInterface, at: number, listed: readonly AgentInfo[]): Promise<void> => {
+  const statusOf = new Map(listed.map(agent => [agent.id, agent.status]))
+  await update($, agents, followed =>
+    followed.filter(agent => {
+      const status = statusOf.get(agent.id)
+
+      return status === undefined ? at - agent.startedAt < GRACE_MS : ALIVE.includes(status)
+    }),
+  )
+}
+
+const refreshAgents = async ($: EngineInterface): Promise<void> => {
+  const at = await $.clock.now()
+  await syncAgents($, at, await $.agent.list().catch(() => []))
+  await update($, clock, () => at)
+  await keepSpinning($)
+}
+
+let ticks = 0
+
+const tick = async ($: EngineInterface): Promise<void> => {
+  ticks += 1
+  if (ticks % LIST_EVERY === 0) {
+    await refreshAgents($)
+    return
+  }
+  const at = await $.clock.now()
+  await update($, clock, () => at)
+}
+
+const followAgent = async ($: EngineInterface, agentId: string, description: string | null, action: string | null): Promise<void> => {
+  const at = await $.clock.now()
+  const known = (await read($, agents)).find(agent => agent.id === agentId)
+  // An agent started before this mod loaded joins at its first action, named as the engine lists it
+  const name = description ?? known?.description ?? (await $.agent.list().catch(() => [])).find(agent => agent.id === agentId)?.description ?? 'Agent'
+  await update($, agents, followed => [
+    ...followed.filter(agent => agent.id !== agentId),
+    known && description === null
+      ? { ...known, lastAt: at, lastAction: action ?? known.lastAction }
+      : { id: agentId, description: name, startedAt: known?.startedAt ?? at, lastAt: at, lastAction: action },
+  ])
+  await update($, clock, () => at)
+  await keepSpinning($)
+}
 
 const PANE = 'task-list'
 const PANE_TITLE = 'Plan & tasks'
@@ -115,13 +201,28 @@ export const register: Register = on => {
 
     await update($, cwd, () => e.cwd)
     await refreshPlan($)
+    await refreshAgents($)
+    $.clock.every(TICK_MS, () => void tick($))
 
     return next(e)
   })
 
-  // A superpowers plan's progress lives in its ledger: read it again after a call that may have
-  // written it, and at the end of every turn
+  // The background agents: each one started, and each tool call one makes (below; it carries the agent's id)
+  on('agent.spawn', async ($, e, next) => {
+    const started = await next(e)
+    if (started.agentId) {
+      await followAgent($, started.agentId, e.description, null)
+    }
+
+    return started
+  })
+
+  // A tool call made inside a background agent is that agent's latest action. A superpowers plan's progress lives
+  // in its ledger: read it again after a call that may have written it, and at the end of every turn
   on('tool.call', async ($, e, next) => {
+    if (e.agentId) {
+      await followAgent($, e.agentId, null, describeAction(e.tool, e as unknown as Record<string, unknown>))
+    }
     const ran = await next(e)
     if (touchesLedger(e)) {
       await refreshPlan($)
@@ -233,15 +334,19 @@ export const register: Register = on => {
     const done = list.filter(one => one.status === 'completed').length
     // A finished list is history, not current work, so it hides even while Claude keeps working
     const hasTodos = list.length > 0 && done < list.length
+    const followed = await read($, agents)
 
-    // Closed by the person: hidden until the plan or the list changes
-    const isClosed = (await read($, closedOn)) === snapshot(running, list)
+    // Closed by the person: hidden until the plan, the list or the agents change
+    const isClosed = (await read($, closedOn)) === snapshot(running, list, followed)
 
-    if (e.props.hasSurvey || (running === null && !hasTodos) || isClosed) {
+    if (e.props.hasSurvey || (running === null && !hasTodos && followed.length === 0) || isClosed) {
       return next(e)
     }
 
     const { Box, Button, Text } = $.ui.resolve(e)
+    const at = await read($, clock)
+    const art = await agentArt($, e)
+    const isWorking = followed.some(agent => isActive(agent, at))
     const active = list.find(one => one.status === 'in_progress')
     const minimized = await read($, isMinimized)
     const setMinimized = (value: boolean) => update($, isMinimized, () => value)
@@ -249,18 +354,30 @@ export const register: Register = on => {
     const current = active ?? list.find(one => one.status !== 'completed')
     const summary = minimized
       ? running === null
-        ? `Todo (${current ? list.indexOf(current) + 1 : 0}/${list.length}) ${current?.subject ?? ''}`
+        ? hasTodos
+          ? `Todo (${current ? list.indexOf(current) + 1 : 0}/${list.length}) ${current?.subject ?? ''}`
+          : `${followed.length} agent${followed.length === 1 ? '' : 's'} running`
         : breadcrumb(running)
       : running === null
-        ? `${done}/${list.length} done${active?.activeForm ? ` · ${active.activeForm}…` : ''}`
+        ? hasTodos
+          ? `${done}/${list.length} done${active?.activeForm ? ` · ${active.activeForm}…` : ''}`
+          : 'Agents'
         : `${MARK.in_progress} ${planSummary(running.name, running.tasks)}`
+    // While an agent works the folded line spins in front
+    const foldedSpinner = minimized && isWorking ? art.marker(true) : ''
+    const byTask = agentsByTask(followed, running)
+    const others = followed.filter(agent => !byTask.matched.has(agent.id))
 
     const mine = (
       <Box key="task-list" flexDirection="column">
         <Box key="head" flexDirection="row" justifyContent="space-between" columnGap={2}>
-          <Text key="summary" bold={running !== null} dimColor={running === null} wrap="truncate-end">
-            {summary}
-          </Text>
+          <Box key="title" flexDirection="row" columnGap={1} flexShrink={1}>
+            {minimized && isWorking && art.image('head-spinner')}
+            <Text key="summary" bold={running !== null} dimColor={running === null} wrap="truncate-end">
+              {foldedSpinner}
+              {summary}
+            </Text>
+          </Box>
           <Box key="actions" flexDirection="row" columnGap={2}>
             <Button key="details" label="Details" plain dimColor onPress={() => $.ui.open({ id: PANE, title: PANE_TITLE })} />
             {/* Minimize and close sit together at the right edge, as a window's controls do */}
@@ -276,12 +393,25 @@ export const register: Register = on => {
                 role="dismiss"
                 plain
                 dimColor
-                onPress={() => update($, closedOn, () => snapshot(running, list))}
+                onPress={() => update($, closedOn, () => snapshot(running, list, followed))}
               />
             </Box>
           </Box>
         </Box>
-        {!minimized && (running === null ? todoLines($, e, list) : taskTree($, e, running.tasks, hasTodos ? list : []))}
+        {!minimized &&
+          (running === null
+            ? todoLines($, e, hasTodos ? list : [])
+            : taskTree($, e, running.tasks, hasTodos ? list : [], n => agentLines($, e, byTask.of(n), at, art, true)))}
+        {!minimized && others.length > 0 && (
+          <Box key="other-agents" flexDirection="column" paddingLeft={running === null && !hasTodos ? 0 : 2}>
+            {(running !== null || hasTodos) && (
+              <Text key="other-agents-title" dimColor>
+                Other agents
+              </Text>
+            )}
+            {agentLines($, e, others, at, art, false)}
+          </Box>
+        )}
       </Box>
     )
 
@@ -315,6 +445,10 @@ export const register: Register = on => {
     const { Box, Text } = $.ui.resolve(e)
     const view = await read($, plan)
     const list = withoutPlanTodos(await read($, tasks), view)
+    const followed = await read($, agents)
+    const at = await read($, clock)
+    const art = await agentArt($, e)
+    const byTask = agentsByTask(followed, view)
 
     if (view === null) {
       return (
@@ -349,7 +483,10 @@ export const register: Register = on => {
                     {MARK[row.status]} {planSummary(row.name, row.tasks)}
                     {row.status === 'on_hold' ? ' · left open' : ''}
                   </Text>
-                  {isCurrentGroup && taskTree($, e, row.tasks, row.isCurrent ? list : [])}
+                  {isCurrentGroup &&
+                    taskTree($, e, row.tasks, row.isCurrent ? list : [], n =>
+                      row.isCurrent ? agentLines($, e, byTask.of(n), at, art, true) : [],
+                    )}
                 </Box>
               ))}
             </Box>
@@ -382,8 +519,15 @@ const todoLines = ($: EngineInterface, e: RenderInput, list: readonly Task[]) =>
   ))
 }
 
-// A plan's tasks, the todos under the task in progress (after the tasks when none is)
-const taskTree = ($: EngineInterface, e: RenderInput, planned: readonly PlanTask[], todos: readonly Task[]) => {
+// A plan's tasks, each with the agents working on it, and the todos under the task in progress (after the tasks when
+// none is)
+const taskTree = (
+  $: EngineInterface,
+  e: RenderInput,
+  planned: readonly PlanTask[],
+  todos: readonly Task[],
+  agentsUnder: (n: number) => ReturnType<typeof agentLines>,
+) => {
   const { Box, Text } = $.ui.resolve(e)
   const activeTask = planned.find(task => task.status === 'in_progress')
   const todoBox = todos.length > 0 && (
@@ -394,22 +538,80 @@ const taskTree = ($: EngineInterface, e: RenderInput, planned: readonly PlanTask
 
   return (
     <Box key="tasks" flexDirection="column" paddingLeft={2}>
-      {planned.map(task => (
-        <Box key={`task-${task.n}`} flexDirection="column">
-          <Text
-            key="line"
-            bold={task.status === 'in_progress'}
-            dimColor={task.status === 'completed'}
-            wrap="truncate-end"
-          >
-            {MARK[task.status]} Task {task.n} {task.title}
-            {task.step ? ` · ${task.step}` : ''}
-            {task.status === 'on_hold' ? ' · on hold' : ''}
-          </Text>
-          {task === activeTask && todoBox}
-        </Box>
-      ))}
+      {planned.map(task => {
+        const working = agentsUnder(task.n)
+        // An unreviewed task with an agent on it (its reviewer, say) is being worked on again
+        const status = task.status === 'unreviewed' && working.length > 0 ? 'in_progress' : task.status
+
+        return (
+          <Box key={`task-${task.n}`} flexDirection="column">
+            <Text key="line" bold={status === 'in_progress'} dimColor={status === 'completed' || status === 'unreviewed'} wrap="truncate-end">
+              {MARK[status]} Task {task.n} {task.title}
+              {status === 'unreviewed' ? ' · implemented, not reviewed' : task.step ? ` · ${task.step}` : ''}
+              {status === 'on_hold' ? ' · on hold' : ''}
+            </Text>
+            {working.length > 0 && (
+              <Box key="agents" flexDirection="column" paddingLeft={2}>
+                {working}
+              </Box>
+            )}
+            {task === activeTask && todoBox}
+          </Box>
+        )
+      })}
       {activeTask === undefined && todoBox}
     </Box>
   )
+}
+
+// How a working agent's marker is drawn: an animated image where the surface has one, a text spinner stepped by the
+// clock in the terminal; a quiet agent gets a still dot
+const agentArt = async ($: EngineInterface, e: RenderInput) => {
+  const table = $.ui.resolve(e)
+  const svg = e.surface !== 'terminal' && 'Svg' in table ? table.Svg : null
+  const step = svg === null ? await read($, frame) : 0
+
+  return {
+    marker: (isWorking: boolean): string => (isWorking ? (svg === null ? `${SPINNER[step % SPINNER.length]} ` : '') : '◦ '),
+    image: (key: string) => svg !== null && h(svg, { key, source: SPINNER_SVG, alt: 'working', width: 12, height: 12, isInteractive: true }),
+  }
+}
+
+// Agents by the plan task they work on, from their descriptions; the rest are no task's
+const agentsByTask = (followed: readonly TrackedAgent[], view: PlanView | null) => {
+  const taskOf = new Map(
+    followed.map(agent => [agent.id, view === null ? null : taskOfAgent(agent.description, view.name, view.tasks)]),
+  )
+
+  return {
+    matched: new Set(followed.filter(agent => taskOf.get(agent.id) != null).map(agent => agent.id)),
+    of: (n: number) => followed.filter(agent => taskOf.get(agent.id) === n),
+  }
+}
+
+// One line per agent: its spinner or dot, its name (its role, under its task), how long it has run, its latest action
+// and how long ago; amber once quiet for 5 minutes
+const agentLines = (
+  $: EngineInterface,
+  e: RenderInput,
+  list: readonly TrackedAgent[],
+  at: number,
+  art: Awaited<ReturnType<typeof agentArt>>,
+  isUnderTask: boolean,
+) => {
+  const { Box, Text } = $.ui.resolve(e)
+
+  return list.map(agent => {
+    const working = isActive(agent, at)
+
+    return (
+      <Box key={`agent-${agent.id}`} flexDirection="row" columnGap={1}>
+        {working && art.image('spinner')}
+        <Text key="line" color={isStuck(agent, at) ? 'warning' : undefined} wrap="truncate-end">
+          {art.marker(working)}
+          {agentText(agent, at, isUnderTask ? roleUnderTask(agent.description) : agent.description)}
+        </Text>
+      </Box>
+    )
+  })
 }
