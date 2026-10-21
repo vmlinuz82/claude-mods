@@ -18,7 +18,8 @@ const LIST_EVERY = 3
 const SPIN_MS = 250
 // A just-started agent the engine does not list yet is kept this long
 const GRACE_MS = 60_000
-const ALIVE: readonly AgentStatus[] = ['pending', 'running', 'waiting']
+// Running only: a finished subagent that could be resumed stays listed as waiting or idle
+const ALIVE: readonly AgentStatus[] = ['pending', 'running']
 
 const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
 const SPINNER_SVG =
@@ -84,8 +85,8 @@ const keepSpinning = async ($: EngineInterface): Promise<void> => {
   }
 }
 
-// The engine's list says which agents still run: finished, failed and stopped ones leave; running ones not yet
-// followed (started before this mod loaded) join
+// The engine's list says which agents still run: finished, failed, stopped and waiting ones leave. Agents are added
+// only when this mod sees them start or act, never from the list alone (it keeps finished agents for a while)
 const refresh = async ($: EngineInterface): Promise<void> => {
   const at = await $.clock.now()
   const listed = await $.agent.list().catch(() => [])
@@ -114,11 +115,7 @@ const syncAgents = async ($: EngineInterface, at: number, listed: readonly Agent
 
       return status === undefined ? at - agent.startedAt < GRACE_MS : ALIVE.includes(status)
     })
-    const joined = listed
-      .filter(agent => ALIVE.includes(agent.status) && !kept.some(one => one.id === agent.id))
-      .map((agent): TrackedAgent => ({ id: agent.id, description: agent.description, startedAt: at, lastAt: at, lastAction: null }))
-
-    return [...kept, ...joined]
+    return kept
   })
 }
 
@@ -152,10 +149,13 @@ export const register: Register = on => {
     if (agentId) {
       const at = await $.clock.now()
       const action = describeAction(e.tool, e as unknown as Record<string, unknown>)
+      // An agent started before this mod loaded joins at its first action, named as the engine lists it
+      const isKnown = (await read($, agents)).some(agent => agent.id === agentId)
+      const listed = isKnown ? undefined : (await $.agent.list().catch(() => [])).find(agent => agent.id === agentId)
       await update($, agents, followed =>
         followed.some(agent => agent.id === agentId)
           ? followed.map(agent => (agent.id === agentId ? { ...agent, lastAt: at, lastAction: action } : agent))
-          : [...followed, { id: agentId, description: 'Agent', startedAt: at, lastAt: at, lastAction: action }],
+          : [...followed, { id: agentId, description: listed?.description ?? 'Agent', startedAt: at, lastAt: at, lastAction: action }],
       )
       await update($, now, () => at)
       await keepSpinning($)

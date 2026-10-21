@@ -29,6 +29,6 @@ claude plugin install agent-activity@claude-mods
 - **No activity for 5 minutes turns the line amber** („no activity for 7 min“): a running agent that may be stuck.
 - **A line closes when its agent finishes, fails or is stopped;** with no agent running there is no band.
 - `×` hides the band until a new agent starts.
-- Only background agents are listed; the main conversation is the one you are watching.
+- Only background agents that are running are listed: an agent shows when it starts or first acts, and a finished agent that could be resumed (waiting or idle) is not running. The main conversation is the one you are watching.
 - The times update every 5 seconds; the engine's agent list is read every 15 seconds.
 - Token counts are left to the app's own Background tasks panel.

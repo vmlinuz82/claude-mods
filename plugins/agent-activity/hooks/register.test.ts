@@ -187,3 +187,26 @@ test('a stack of bands other mods already framed is joined, not framed again', {
     expect((await ui.findAll({ type: 'Text' })).map(one => one.text).slice(0, 2)).toEqual(['task band', 'skills band'])
   }
 })
+
+test('an agent only listed by the engine shows once it acts, and a waiting or idle agent is not running', async ($, on) => {
+  const { statuses, clock } = await start($, on)
+  // Agents from before this mod loaded: one finished but resumable, one idle, one really running
+  statuses.set('old-done', 'waiting')
+  statuses.set('old-idle', 'idle')
+  statuses.set('old-busy', 'running')
+  await clock.advance(15_000)
+  expect(await lines($, 'desktop')).toEqual([])
+
+  // The running one acts: it appears, with its action
+  await act($, 'old-busy', { tool: 'Bash', command: 'npx vitest run' })
+  const shown = (await lines($, 'terminal')).join('\n')
+  expect(shown).toContain('Bash: npx vitest run')
+  expect(shown).not.toContain('old-done')
+  expect(shown).not.toContain('old-idle')
+
+  // A spawned agent that goes waiting (done, resumable) leaves the band
+  const { agentId = '' } = await spawn($, 'Implement Plan 10 Task 10')
+  statuses.set(agentId, 'waiting')
+  await clock.advance(15_000)
+  expect((await lines($, 'desktop')).join('\n')).not.toContain('Task 10')
+})
