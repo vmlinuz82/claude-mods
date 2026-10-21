@@ -395,7 +395,7 @@ export const register: Register = on => {
     const mine = (
       <Box key="task-list" flexDirection="column">
         <Box key="head" flexDirection="row" justifyContent="space-between" columnGap={2}>
-          <Box key="title" flexDirection="row" columnGap={1} flexShrink={1}>
+          <Box key="title" flexDirection="row" columnGap={1} flexShrink={1} minWidth={0}>
             {minimized && isWorking && art.image('head-spinner')}
             <Text key="summary" bold={running !== null} dimColor={running === null} wrap="truncate-end">
               {foldedSpinner}
@@ -403,7 +403,8 @@ export const register: Register = on => {
               {foldedActivity}
             </Text>
           </Box>
-          <Box key="actions" flexDirection="row" columnGap={2}>
+          {/* Never squeezed: a long folded line truncates instead of pushing the buttons out */}
+          <Box key="actions" flexDirection="row" columnGap={2} flexShrink={0}>
             <Button key="details" label="Details" plain dimColor onPress={() => $.ui.open({ id: PANE, title: PANE_TITLE })} />
             {/* Minimize and close sit together at the right edge, as a window's controls do */}
             <Box key="window" flexDirection="row" columnGap={1}>
