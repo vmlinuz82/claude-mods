@@ -1,6 +1,7 @@
 import type { AgentStatus } from 'claude-code'
 
 import type { PlanTask, TrackedAgent } from '../types'
+import { taskNumbers } from './sdd'
 
 // The background agents beside the task list: what each is doing, matched to the plan task it works on
 
@@ -86,17 +87,7 @@ export const tasksOfAgent = (description: string, planName: string, tasks: reado
     return []
   }
 
-  // `1–4` and `1 to 4` are ranges, the rest single tasks
-  const numbers: number[] = []
-  for (const [, from, to] of named.matchAll(/(\d+)(?:\s*(?:[–—-]|to)\s*(\d+))?/gi)) {
-    const first = Number(from)
-    const last = to === undefined ? first : Math.max(first, Number(to))
-    for (let n = first; n <= last; n++) {
-      numbers.push(n)
-    }
-  }
-
-  return numbers.filter(n => tasks.some(task => task.n === n))
+  return taskNumbers(named).filter(n => tasks.some(task => task.n === n))
 }
 
 // Under its task the agent's line names what it does there: „Plan 10 Task 10: referral invites“ → „referral invites“

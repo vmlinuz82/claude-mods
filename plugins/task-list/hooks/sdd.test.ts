@@ -46,6 +46,25 @@ test('parseLedger names each kind of step', () => {
   }
 })
 
+test('parseLedger applies an entry for a range or list of tasks to each of them', () => {
+  const ledger = parseLedger(
+    [
+      'Task 1: implemented, review pending (backend 8919b53)',
+      'Task 4: implemented, review pending (frontend 4d157b6)',
+      'Tasks 1–4: review dispatched (opus, read-only)',
+      'Tasks 1–4: fix round 1 dispatched (findings 1–12)',
+      'Tasks 2, 3 and 5: complete',
+    ].join('\n'),
+  )
+  expect(ledger.tasks).toEqual({
+    1: { isComplete: false, step: 'fix round 1' },
+    2: { isComplete: true, step: 'fix round 1' },
+    3: { isComplete: true, step: 'fix round 1' },
+    4: { isComplete: false, step: 'fix round 1' },
+    5: { isComplete: true },
+  })
+})
+
 test('splitTitle finds the phase and the plan name in each title style; a sub-phase joins its main phase', () => {
   const cases: [string, { phase: string | null; name: string }][] = [
     ['Phase 7 · Plan 3 — Frontend Foundation Implementation Plan', { phase: '7', name: 'Plan 3 — Frontend Foundation' }],

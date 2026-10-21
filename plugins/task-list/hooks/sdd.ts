@@ -23,7 +23,17 @@ const NOTE = /^\s*:\s*(ruling|minor|parked|note)\b/i
 const DEFERRAL = /\bdefer(red|s)?\b|\bon hold\b/i
 const LEDGER_IDENTITY = /^# SDD ledger — plan:\s*(.+?)\s*$/
 // A ledger line, bare or as a list item (`- Task 3: …`): controllers write it both ways
-const LEDGER_TASK = /^\s*(?:[-*+]\s+)?Task\s+(\d+)\b(.*)$/
+// …or one entry for several tasks: `Tasks 1–4: review dispatched`, `Tasks 2, 3 and 5: complete`
+const LEDGER_TASK = /^\s*(?:[-*+]\s+)?Tasks?\s+(\d+(?:\s*(?:[,&+–—-]|and|to)\s*\d+)*)\b(.*)$/
+
+// The tasks a `1–4`, `1 to 4` or `2, 3 and 5` names: a range is every task in it
+export const taskNumbers = (named: string): number[] =>
+  [...named.matchAll(/(\d+)(?:\s*(?:[–—-]|to)\s*(\d+))?/gi)].flatMap(([, from, to]) => {
+    const first = Number(from)
+    const last = to === undefined ? first : Math.max(first, Number(to))
+
+    return Array.from({ length: last - first + 1 }, (_, at) => first + at)
+  })
 const PHASE_IN_PARENS = /\s*\(Phase\s+([0-9][\w.]*)\)/
 const PHASE_PREFIX = /^.*?\bPhase\s+([0-9][\w.]*)\s*[·—–:-]?\s*(.*)$/
 const IMPLEMENTATION_PLAN = /[\s—–-]*Implementation Plan\s*$/
@@ -80,6 +90,28 @@ export const parsePlan = (text: string): { title: string; tasks: PlanHeading[] }
   return { title, tasks }
 }
 
+// One task's entry after a ledger part about it; undefined when the part only names it in passing
+const nextEntry = (known: LedgerTask | undefined, rest: string, isLineStart: boolean): LedgerTask | undefined => {
+  // The task moves again: no longer on hold
+  const { isOnHold: _wasOnHold, ...task } = known ?? { isComplete: false }
+  // Done at `Task N: complete` (or `Task N complete`), or at an approved review with no problem reported beside it:
+  // some controllers write no complete line after `Task 1 review: APPROVED`
+  if (/^\s*:?\s*complete\b/i.test(rest)) {
+    return { ...task, isComplete: true }
+  }
+
+  // A note on the task (`Task 2: Ruling: …`, `Task 1: minor (deferred): …`) is no step of it
+  const step = NOTE.test(rest) ? null : stepOf(rest)
+  const isApproved = /\bapproved\b/i.test(rest) && !REVIEW_PROBLEM.test(rest)
+  // Mid-line, a task is named in passing (`…; Task 17 added to Plan 10`) unless the part records a step of it
+  if (!isLineStart && step === null && !isApproved && known === undefined) {
+    return undefined
+  }
+  const moved = step === null ? task : { ...task, step }
+
+  return isApproved ? { ...moved, isComplete: true } : moved
+}
+
 export const parseLedger = (text: string): Ledger => {
   const lines = text.split('\n')
   const plan = lines[0]?.match(LEDGER_IDENTITY)?.[1] ?? null
@@ -114,30 +146,17 @@ export const parseLedger = (text: string): Ledger => {
       }
       continue
     }
-    const n = Number(match[1])
     const rest = match[2] ?? ''
     // `Task 1 → Task 2 carry: …` is a note between tasks, not a step of either
     if (/^\s*→/.test(rest)) {
       continue
     }
-    // The task moves again: no longer on hold
-    const { isOnHold: _wasOnHold, ...task } = tasks[n] ?? { isComplete: false }
-    // Done at `Task N: complete` (or `Task N complete`), or at an approved review with no problem reported beside it:
-    // some controllers write no complete line after `Task 1 review: APPROVED`
-    if (/^\s*:?\s*complete\b/i.test(rest)) {
-      tasks[n] = { ...task, isComplete: true }
-      continue
+    for (const n of taskNumbers(match[1] ?? '')) {
+      const entry = nextEntry(tasks[n], rest, isLineStart)
+      if (entry) {
+        tasks[n] = entry
+      }
     }
-
-    // A note on the task (`Task 2: Ruling: …`, `Task 1: minor (deferred): …`) is no step of it
-    const step = NOTE.test(rest) ? null : stepOf(rest)
-    const isApproved = /\bapproved\b/i.test(rest) && !REVIEW_PROBLEM.test(rest)
-    // Mid-line, a task is named in passing (`…; Task 17 added to Plan 10`) unless the part records a step of it
-    if (!isLineStart && step === null && !isApproved && tasks[n] === undefined) {
-      continue
-    }
-    const moved = step === null ? task : { ...task, step }
-    tasks[n] = isApproved ? { ...moved, isComplete: true } : moved
   }
 
   // `MERGED …` or `Plan 8 MERGED …`, upper case: a lower-case „Ready to merge“ is only a review verdict
