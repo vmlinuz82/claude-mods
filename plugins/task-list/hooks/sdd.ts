@@ -33,6 +33,8 @@ const STEPS: [RegExp, (match: RegExpMatchArray) => string][] = [
   [/\bfix round (\d+)/i, match => `fix round ${match[1]}`],
   [/\bre-review\b/i, () => 're-review'],
   [/\breview(er)?\b/i, () => 'review'],
+  // The implementer's report (`Task 5: DONE — …`, `DONE_WITH_CONCERNS`), upper case as superpowers writes it
+  [/\bDONE(_WITH_CONCERNS)?\b/, () => 'implemented'],
   [/\b(dispatched|started)\b/i, () => 'implementing'],
   [/\bimplement(er|ed)\b/i, () => 'implemented'],
 ]
@@ -85,9 +87,9 @@ export const parseLedger = (text: string): Ledger => {
   // A line may hold several events (`Scoped re-review dispatched; Task 4 dispatched in parallel`): each part
   // starting `Task N` opens a segment of that task, and the parts after it stay with it
   const segments = lines.flatMap(line =>
-    // `;` separates events, and so does a sentence break before an entry `Task N:` (`Task 23: complete. Task 37: complete.`);
+    // `;` separates events, and so does a sentence break before an entry `Task N:`, `Task N complete` or `Task N dispatched` (`Task 23: complete. Task 37: complete.`);
     // prose that names a task (`… precedes it. Task 6 must hoist it`) is no entry
-    line.split(/;|\.\s+(?=Task\s+\d+\s*(?::|complete\b))/).reduce<string[]>((parts, part) => {
+    line.split(/;|\.\s+(?=Task\s+\d+\s*(?::|complete\b|dispatched\b))/).reduce<string[]>((parts, part) => {
       if (LEDGER_TASK.test(part) || parts.length === 0) {
         return [...parts, part]
       }

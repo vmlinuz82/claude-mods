@@ -473,3 +473,20 @@ test('a task is done at an approved review or at `Task N complete` written witho
     [9, false],
   ])
 })
+
+test('a later sentence `Task N dispatched` starts that task, and an implementer DONE reads as implemented', () => {
+  const ledger = parseLedger(
+    [
+      'Task 5: DONE — backend 4d8159f (trial starts on verify; TrialStartTest 10 OK), fix 82321aa (social link branch).',
+      'Task 9: DONE_WITH_CONCERNS — backend d5708c8 (EffectiveWatchLimitTest 14, full suite 6289 OK, lint clean).',
+      'Task 8: DONE_WITH_CONCERNS — backend 388b421 (client 713 OK). Concerns: checkout offered to trial users). Task 10 dispatched.',
+    ].join('\n'),
+  )
+
+  expect(ledger.tasks).toEqual({
+    5: { isComplete: false, step: 'implemented' },
+    8: { isComplete: false, step: 'implemented' },
+    9: { isComplete: false, step: 'implemented' },
+    10: { isComplete: false, step: 'implementing' },
+  })
+})
