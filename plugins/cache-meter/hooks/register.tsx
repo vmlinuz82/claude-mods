@@ -29,12 +29,13 @@ const BAR_HEIGHT = 6
 const DOT_SIZE = 8
 // A drawing can't follow the theme, so its colours match the theme's success, warning, error and text colours
 const PAINT = { track: '#3d3d3d', success: '#2ea35e', warning: '#e0a526', error: '#d9534f', text: '#e8e8e8' } as const
-// The state pill is filled with a dark tint of its colour, as in the design
+// Pill fills are theme keys, so they follow a light or dark theme: a tint of green or red, otherwise the grey the
+// theme fills a user message with. No theme key holds an amber fill, so the amber pill is grey with amber text
 const TINT: Readonly<Record<Tone, string>> = {
-  success: '#173a26',
-  warning: '#3d3115',
-  error: '#3d1a1a',
-  text: '#2a2a2a',
+  success: 'diffAddedDimmed',
+  warning: 'userMessageBackground',
+  error: 'diffRemovedDimmed',
+  text: 'userMessageBackground',
 }
 // How the terminal, which can't draw, spells the same bars and dots
 const FILLED = '━'
@@ -559,8 +560,8 @@ export const register: Register = on => {
           ? `Last turn rebuilt the cache — ${turn.rebuiltBecause}`
           : null
 
-    // One rounded pill of the strip, filled with no visible outline: dark grey, or a dark tint of its tone when it
-    // warns. The border, in the fill's colour, is what rounds the corners
+    // One rounded pill of the strip, filled with no visible outline: grey, or a tint of its tone when it warns. The
+    // border, in the fill's colour, is what rounds the corners
     const pill = (key: string, pillTone: Tone | null, content: JSX.Element[]) => (
       <Box
         key={key}
@@ -713,12 +714,10 @@ export const register: Register = on => {
     ]
     const shown = fitPills(candidates, e.props.bodyColumns - STRIP_RESERVED)
 
-    // The one-line strip: the numbers that matter at a glance, and the arrow that opens everything else
+    // The one-line strip: the arrow that opens everything else, and the numbers that matter at a glance. The arrow
+    // comes first, since the desktop app floats its own buttons over a band's top-right corner
     const strip = (
-      <Box key="strip" flexDirection="row" justifyContent="space-between" alignItems="center" columnGap={2}>
-        <Box key="pills" flexDirection="row" flexWrap="nowrap" columnGap={1}>
-          {shown}
-        </Box>
+      <Box key="strip" flexDirection="row" alignItems="center" columnGap={1}>
         <Button
           key="cache-meter-toggle"
           label={expanded ? '↓' : '↑'}
@@ -726,6 +725,9 @@ export const register: Register = on => {
           dimColor
           onPress={() => update($, isExpanded, now => !now)}
         />
+        <Box key="pills" flexDirection="row" flexWrap="nowrap" columnGap={1}>
+          {shown}
+        </Box>
       </Box>
     )
 
