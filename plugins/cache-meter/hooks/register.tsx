@@ -714,10 +714,12 @@ export const register: Register = on => {
     ]
     const shown = fitPills(candidates, e.props.bodyColumns - STRIP_RESERVED)
 
-    // The one-line strip: the arrow that opens everything else, and the numbers that matter at a glance. The arrow
-    // comes first, since the desktop app floats its own buttons over a band's top-right corner
+    // The one-line strip: the numbers that matter at a glance, and the arrow that opens everything else
     const strip = (
-      <Box key="strip" flexDirection="row" alignItems="center" columnGap={1}>
+      <Box key="strip" flexDirection="row" justifyContent="space-between" alignItems="center" columnGap={2}>
+        <Box key="pills" flexDirection="row" flexWrap="nowrap" columnGap={1}>
+          {shown}
+        </Box>
         <Button
           key="cache-meter-toggle"
           label={expanded ? '↓' : '↑'}
@@ -725,9 +727,6 @@ export const register: Register = on => {
           dimColor
           onPress={() => update($, isExpanded, now => !now)}
         />
-        <Box key="pills" flexDirection="row" flexWrap="nowrap" columnGap={1}>
-          {shown}
-        </Box>
       </Box>
     )
 
