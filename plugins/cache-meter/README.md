@@ -35,6 +35,7 @@ claude plugin install cache-meter@claude-mods
 
 ## Behaviour worth knowing
 
+- **A system notification goes out as the strip turns amber,** once per countdown: 9 minutes before a one-hour cache expires, 45 seconds before a five-minute one. It names the session (its folder until it has a title) and what an expiry would cost. It uses `notify-send` on Linux and `osascript` on macOS; where neither works, the same text shows as a toast in Claude.
 - **Amber means act now if you will come back:** the pill shows what an expiry would cost and what a short message costs to keep the cache warm — a read of the conversation instead of writing it again.
 - The lifetime comes from Claude Code's own settings (`promptCacheTtl`, `CLAUDE_CODE_PROMPT_CACHE_TTL`, `FORCE_PROMPT_CACHING_5M`, `ENABLE_PROMPT_CACHING_1H`), otherwise from its default (an hour on a subscription, five minutes with an API key), and is corrected by what the cache actually does after a pause.
 - **The main conversation only:** subagents keep caches of their own and are left out.

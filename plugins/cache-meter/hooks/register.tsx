@@ -74,6 +74,7 @@ const session = atom({ plugin: 'cache-meter', key: 'session' } as const, {
 const contextWindow = atom({ plugin: 'cache-meter', key: 'window' } as const, null)
 const clock = atom({ plugin: 'cache-meter', key: 'clock' } as const, 0)
 const isExpanded = atom({ plugin: 'cache-meter', key: 'isExpanded' } as const, false)
+const warnedFor = atom({ plugin: 'cache-meter', key: 'warnedFor' } as const, null)
 
 const duration = (ms: number): string => {
   if (ms < MINUTE) {
@@ -246,9 +247,107 @@ const rebuildOf = (
   return change ?? { text: 'cause unknown — MCP tools, settings or a Claude Code update can reset it', kind: 'unknown' }
 }
 
+// The system's own notifier, its text passed as arguments and never as script: notify-send on Linux, osascript
+// on macOS; null elsewhere
+const notifierCommand = (system: string, title: string, body: string): string[] | null => {
+  if (system === 'Linux') {
+    return ['notify-send', title, body]
+  }
+  if (system === 'Darwin') {
+    return [
+      'osascript',
+      '-e',
+      'on run argv',
+      '-e',
+      'display notification (item 2 of argv) with title (item 1 of argv)',
+      '-e',
+      'end run',
+      title,
+      body,
+    ]
+  }
+
+  return null
+}
+
+const systemName = async ($: EngineInterface): Promise<string> => {
+  try {
+    return (await $.process.run(['uname', '-s'])).stdout.trim()
+  } catch {
+    // No uname (Windows): no notifier is known there
+    return ''
+  }
+}
+
+// Sends a system notification, or a toast in the app where the system has no notifier the mod knows
+const notifySystem = async ($: EngineInterface, title: string, body: string): Promise<void> => {
+  const command = notifierCommand(await systemName($), title, body)
+  const exitCode = command === null ? null : await $.process.run(command).then(done => done.exitCode, () => null)
+  if (exitCode !== 0) {
+    $.ui.toast(`${title} — ${body}`)
+  }
+}
+
+// The session's title as Claude Code saves it in the session's transcript, the latest one; null when it has none or
+// the transcript is not where Claude Code keeps it. Only the title lines are read: a transcript runs to many megabytes
+const sessionTitle = async ($: EngineInterface, root: string): Promise<string | null> => {
+  const home = await $.env.get('HOME')
+  const configDirectory = (await $.env.get('CLAUDE_CONFIG_DIR')) ?? (home === undefined ? null : `${home}/.claude`)
+  if (configDirectory === null) {
+    return null
+  }
+
+  const transcript = `${configDirectory}/projects/${root.replace(/[^a-zA-Z0-9]/g, '-')}/${await $.session.id()}.jsonl`
+  const found = await $.process.run(['grep', '-a', '-e', '"type":"custom-title"', transcript]).then(
+    done => done.stdout,
+    () => '',
+  )
+  const latest = found.trim().split('\n').pop()
+  if (!latest) {
+    return null
+  }
+
+  try {
+    const entry: { customTitle?: unknown } = JSON.parse(latest)
+
+    return typeof entry.customTitle === 'string' && entry.customTitle !== '' ? entry.customTitle : null
+  } catch {
+    // A line cut short while Claude Code writes it names no title yet
+    return null
+  }
+}
+
+// Once per countdown, as the strip turns amber: a system notification naming the session, so a person away from the
+// window knows which one to keep warm
+const warnBeforeExpiry = async ($: EngineInterface, now: number): Promise<void> => {
+  const request = await read($, last)
+  if (request === null || (await read($, warnedFor)) === request.at) {
+    return
+  }
+
+  const { ms } = await read($, lifetime)
+  const left = request.at + ms - now
+  if (left <= 0 || left > ms * WARN_SHARE) {
+    return
+  }
+
+  await update($, warnedFor, () => request.at)
+  const cached = request.read + request.written
+  // The session's title, or the folder it started in until it has one
+  const root = await $.session.root()
+  const name = (await sessionTitle($, root)) ?? root.split('/').filter(Boolean).pop() ?? '/'
+  await notifySystem(
+    $,
+    `${name}: cache expires in ${duration(left)}`,
+    `If it expires, the next message costs as much as ≈ ${tokens(cached * writeRate(ms))} regular input tokens. ` +
+      `A short message now keeps it warm for ≈ ${tokens(cached * readRate(request.model))}`,
+  )
+}
+
 const tick = async ($: EngineInterface): Promise<void> => {
   const now = await $.clock.now()
   await update($, clock, () => now)
+  await warnBeforeExpiry($, now)
 }
 
 // m:ss, or h:mm:ss from an hour up

@@ -12,18 +12,57 @@ const band = {
   props: { hasSurvey: false, isWorking: false, maxRows: 20, bodyColumns: 200 } as never,
 } as const
 
-type Setup = { env: Record<string, string>; settings: Record<string, unknown>; rateLimits: unknown[] }
+// system: what `uname -s` answers; titles: the title lines grep finds in the transcript; greps: what grep was asked
+// for; commands and toasts: what the mod ran and showed
+type Setup = {
+  env: Record<string, string>
+  settings: Record<string, unknown>
+  rateLimits: unknown[]
+  system: string
+  titles: string
+  greps: string[][]
+  commands: string[][]
+  toasts: string[]
+}
 type Usage = { read: number; written: number; fresh?: number; model?: string }
 
 // Stands in for the engine: the session's settings, environment and rate limits, and each model request answered
 // with the next usage queued
 const engine = (on: On, setup: Setup, queue: Usage[], beneath: 'none' | 'band' | 'stack' = 'none') => {
-  on('session.start', async (_$, e) => e)
+  let cwd = '/'
+  on('session.start', async (_$, e) => {
+    cwd = e.cwd
+
+    return e
+  })
+  on('session.root', async () => ({ value: cwd }))
+  on('session.id', async () => ({ value: 'session-1' }))
   on('session.usage', async () => ({
     value: { startedAt: 0, context: { window: 200_000 }, rateLimits: setup.rateLimits } as never,
   }))
   on('settings.read', async () => ({ value: setup.settings as never }))
   on('env.get', async (_$, e) => ({ value: setup.env[e.name] }))
+  // Commands on the host never run in a test: uname answers the system, grep the title lines, any other command
+  // succeeds and is noted
+  on('process.run', async (_$, e) => {
+    const answers: Record<string, string> = { uname: `${setup.system}\n`, grep: setup.titles }
+    const answer = answers[e.argv[0]]
+    if (answer === undefined) {
+      setup.commands.push([...e.argv])
+    }
+    if (e.argv[0] === 'grep') {
+      setup.greps.push([...e.argv])
+    }
+
+    const stdout = answer ?? ''
+
+    return { value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  })
+  on('ui.toast', async (_$, e) => {
+    setup.toasts.push(e.text)
+
+    return { value: undefined }
+  })
   // What draws beneath the plugin: nothing (the engine's placeholder), another mod's band, or a stack of framed bands
   on('ui.render', { component: 'AbovePrompt' }, async ($, e) => {
     if (beneath === 'none') {
@@ -57,7 +96,16 @@ const engine = (on: On, setup: Setup, queue: Usage[], beneath: 'none' | 'band' |
   })
 }
 
-const fresh = (): Setup => ({ env: {}, settings: {}, rateLimits: [] })
+const fresh = (system = 'Linux'): Setup => ({
+  env: {},
+  settings: {},
+  rateLimits: [],
+  system,
+  titles: '',
+  greps: [],
+  commands: [],
+  toasts: [],
+})
 
 // A model request runs as its stream is read, so the helper reads it to the end
 const step = async ($: Engine, queue: Usage[], usage: Usage, turnId: string, index = 0, extra: object = {}) => {
@@ -355,3 +403,97 @@ test(
     expect(await texts(narrow)).toEqual(['Cache warm', '5:00', 'left'])
   },
 )
+
+// A five-minute cache turns amber 45 s before it expires: the notification goes out then, once per countdown
+const TITLE = 'project: cache expires in 45 s'
+const BODY =
+  'If it expires, the next message costs as much as ≈ 13k regular input tokens. ' +
+  'A short message now keeps it warm for ≈ 500'
+
+test('notifies through notify-send on Linux once per countdown, as the strip turns amber', SLOW, async ($, on) => {
+  const clock = mock.clock(on, { now: 0 })
+  const queue: Usage[] = []
+  const setup = fresh('Linux')
+  engine(on, setup, queue)
+  await $.session.start({ cwd: '/home/someone/project', surface: 'desktop', isInteractive: true })
+  await step($, queue, { read: 0, written: 10_000 }, 't1')
+
+  await clock.advance(4 * MINUTE)
+  expect(setup.commands).toEqual([])
+
+  await clock.advance(MINUTE / 2)
+  expect(setup.commands).toEqual([['notify-send', TITLE, BODY]])
+
+  // Expiring sends nothing more; the next request starts a countdown of its own
+  await clock.advance(MINUTE)
+  await step($, queue, { read: 0, written: 10_000 }, 't2')
+  await clock.advance(4.5 * MINUTE)
+  expect(setup.commands).toHaveLength(2)
+  expect(setup.toasts).toEqual([])
+})
+
+test('notifies through osascript on macOS, the text passed as arguments', SLOW, async ($, on) => {
+  const clock = mock.clock(on, { now: 0 })
+  const queue: Usage[] = []
+  const setup = fresh('Darwin')
+  engine(on, setup, queue)
+  await $.session.start({ cwd: '/Users/someone/project', surface: 'desktop', isInteractive: true })
+  await step($, queue, { read: 0, written: 10_000 }, 't1')
+
+  await clock.advance(4.5 * MINUTE)
+  expect(setup.commands).toEqual([
+    [
+      'osascript',
+      '-e',
+      'on run argv',
+      '-e',
+      'display notification (item 2 of argv) with title (item 1 of argv)',
+      '-e',
+      'end run',
+      TITLE,
+      BODY,
+    ],
+  ])
+})
+
+test('shows a toast in the app where the system has no notifier the mod knows', SLOW, async ($, on) => {
+  const clock = mock.clock(on, { now: 0 })
+  const queue: Usage[] = []
+  const setup = fresh('')
+  engine(on, setup, queue)
+  await $.session.start({ cwd: '/home/someone/project', surface: 'desktop', isInteractive: true })
+  await step($, queue, { read: 0, written: 10_000 }, 't1')
+
+  await clock.advance(4.5 * MINUTE)
+  expect(setup.commands).toEqual([])
+  expect(setup.toasts).toEqual([`${TITLE} — ${BODY}`])
+})
+
+test('names the session by the latest title its transcript holds, by its folder without one', SLOW, async ($, on) => {
+  const clock = mock.clock(on, { now: 0 })
+  const queue: Usage[] = []
+  const setup = fresh('Linux')
+  setup.env.HOME = '/home/someone'
+  engine(on, setup, queue)
+  await $.session.start({ cwd: '/home/someone/my.project', surface: 'desktop', isInteractive: true })
+  await step($, queue, { read: 0, written: 10_000 }, 't1')
+  await clock.advance(4.5 * MINUTE)
+
+  setup.titles =
+    '{"type":"custom-title","customTitle":"First name","sessionId":"session-1"}\n' +
+    '{"type":"custom-title","customTitle":"Claude Mods","sessionId":"session-1"}\n'
+  await step($, queue, { read: 0, written: 10_000 }, 't2')
+  await clock.advance(4.5 * MINUTE)
+
+  expect(setup.commands.map(command => command[1])).toEqual([
+    'my.project: cache expires in 45 s',
+    'Claude Mods: cache expires in 45 s',
+  ])
+  expect(setup.greps[0]).toEqual([
+    'grep',
+    '-a',
+    '-e',
+    '"type":"custom-title"',
+    '/home/someone/.claude/projects/-home-someone-my-project/session-1.jsonl',
+  ])
+})

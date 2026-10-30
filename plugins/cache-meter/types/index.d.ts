@@ -58,9 +58,11 @@ export type SessionTally = Tally & {
 declare module 'claude-code' {
   interface PluginState {
     // last: the latest request that used the cache; turns: newest first; window: the model's context window in
-    // tokens; clock: the time as last read; isExpanded: the details opened under the one-line strip
+    // tokens; clock: the time as last read; isExpanded: the details opened under the one-line strip; warnedFor: the
+    // start of the request whose countdown already sent its notification
     'cache-meter': {
       isExpanded: boolean
+      warnedFor: number | null
       last: CacheRequest | null
       lifetime: Lifetime
       turns: TurnSummary[]
