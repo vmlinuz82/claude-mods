@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, RenderElement, TurnUsage } from 'claude-code'
 
-import type { CacheRequest, HourVsFive, Lifetime, SessionTally, Tally, TurnSummary } from '../types'
+import type { CacheRequest, HourVsFive, KeepWarm, Lifetime, SessionTally, Tally, TurnSummary } from '../types'
 
 const SECOND = 1000
 const MINUTE = 60 * SECOND
@@ -38,6 +38,17 @@ const TINT: Readonly<Record<Tone, string>> = {
   error: 'diffRemovedDimmed',
   text: 'userMessageBackground',
 }
+// Keep warm: the pauses offered, in hours, and the keep-alive's own few tokens beside the read of the conversation:
+// its message and the one-word reply written to the cache, the reply as output
+const KEEP_WARM_HOURS = [1, 2, 4, 8, 16, 24]
+const KEEP_ALIVE_WRITTEN = 100
+const KEEP_ALIVE_OUTPUT = 20
+const KEEP_ALIVE_TEXT = "Keep warm, it's cold out here: reply ok, no tools."
+// Cells the strip keeps for the keep-warm button, at its longest: `Keep warm · 23 h 59 min left`
+const KEEP_WARM_COLUMNS = 28
+// The keep-warm dialog: its chip, and how many pauses it offers, Claude Code's question dialog taking four at most
+const KEEP_WARM_TITLE = 'Keep warm'
+const ASK_OPTIONS = 4
 // How the terminal, which can't draw, spells the same bars and dots
 const FILLED = '━'
 const EMPTY = '─'
@@ -76,6 +87,7 @@ const contextWindow = atom({ plugin: 'cache-meter', key: 'window' } as const, nu
 const clock = atom({ plugin: 'cache-meter', key: 'clock' } as const, 0)
 const isExpanded = atom({ plugin: 'cache-meter', key: 'isExpanded' } as const, false)
 const warnedFor = atom({ plugin: 'cache-meter', key: 'warnedFor' } as const, null)
+const keepWarm = atom({ plugin: 'cache-meter', key: 'keepWarm' } as const, null)
 
 const duration = (ms: number): string => {
   if (ms < MINUTE) {
@@ -93,6 +105,11 @@ const duration = (ms: number): string => {
 }
 
 const tokens = (count: number): string => {
+  // A negative count, a saving the cache did not make, with a real minus sign as the strip writes it
+  if (Math.round(count) < 0) {
+    return `−${tokens(-count)}`
+  }
+
   const rounded = Math.round(count)
   if (rounded < 1000) {
     return String(rounded)
@@ -109,7 +126,11 @@ const tokens = (count: number): string => {
   return `${(rounded / 1_000_000).toFixed(1)}M`
 }
 
-const percent = (part: number, whole: number): string => `${Math.round(share(part, whole) * 100)}%`
+const percent = (part: number, whole: number): string => {
+  const rounded = Math.round(share(part, whole) * 100)
+
+  return rounded < 0 ? `−${-rounded}%` : `${rounded}%`
+}
 
 const share = (part: number, whole: number): number => (whole === 0 ? 0 : part / whole)
 
@@ -149,6 +170,31 @@ const add = <T extends Tally>(into: T, more: Tally): T => ({
   cost: into.cost + more.cost,
   costWithoutCache: into.costWithoutCache + more.costWithoutCache,
 })
+
+// What one keep-alive costs, in regular input tokens: a read of the conversation and its own few tokens
+const keepAliveCost = (cached: number, model: string, lifetimeMs: number): number =>
+  cached * readRate(model) + KEEP_ALIVE_WRITTEN * writeRate(lifetimeMs) + KEEP_ALIVE_OUTPUT * OUTPUT_RATE
+
+// A keep-alive goes out as the countdown turns amber, one every 85% of the lifetime
+const keepAliveEvery = (lifetimeMs: number): number => lifetimeMs * (1 - WARN_SHARE)
+
+// The longest pause keep-alives pay for: while they cost less than writing the conversation again once
+const breakEven = (cached: number, model: string, lifetimeMs: number): number =>
+  ((cached * writeRate(lifetimeMs)) / keepAliveCost(cached, model, lifetimeMs)) * keepAliveEvery(lifetimeMs)
+
+// What keep-alives through a pause save against writing the conversation again once, the keep-alives counted in
+// whole; negative when they cost more
+const keepWarmSaving = (hours: number, cached: number, model: string, lifetimeMs: number): number =>
+  cached * writeRate(lifetimeMs) -
+  Math.ceil((hours * ONE_HOUR) / keepAliveEvery(lifetimeMs)) * keepAliveCost(cached, model, lifetimeMs)
+
+// The pauses on offer that keep-alives pay for
+const worthwhileHours = (cached: number, model: string, lifetimeMs: number): number[] =>
+  KEEP_WARM_HOURS.filter(hours => keepWarmSaving(hours, cached, model, lifetimeMs) > 0)
+
+// The pauses a dialog of `room` options offers: all of them when they fit, else the shortest and the longest ones
+const askedHours = (offered: readonly number[], room: number): number[] =>
+  offered.length <= room ? [...offered] : [offered[0], ...offered.slice(-(room - 1))]
 
 const saved = (tally: Tally): string => percent(tally.costWithoutCache - tally.cost, tally.costWithoutCache)
 
@@ -319,17 +365,126 @@ const sessionTitle = async ($: EngineInterface, root: string): Promise<string | 
   }
 }
 
-// Once per countdown, as the strip turns amber: a system notification naming the session, so a person away from the
-// window knows which one to keep warm
-const warnBeforeExpiry = async ($: EngineInterface, now: number): Promise<void> => {
+const startKeepWarm = async ($: EngineInterface, hours: number): Promise<void> => {
+  const now = await $.clock.now()
+  await update($, keepWarm, () => ({
+    until: now + hours * ONE_HOUR,
+    sent: 0,
+    cost: 0,
+    isAwaiting: false,
+    keptFor: null,
+  }))
+}
+
+// While keep warm is on: how long is left and what its keep-alives cost against one rebuild
+const keepingLine = (keeping: KeepWarm, now: number, rebuildCost: number): string =>
+  `Keeping warm · ${duration(Math.max(0, keeping.until - now))} left · ${keeping.sent} keep-alive` +
+  `${keeping.sent === 1 ? '' : 's'} ≈ ${tokens(keeping.cost)} against a ≈ ${tokens(rebuildCost)} rebuild`
+
+// While off: the longest pause keep-alives pay for, or that not even an hour does
+const limitLine = (offered: readonly number[], request: CacheRequest, lifetimeMs: number): string => {
+  const cached = request.read + request.written
+
+  return offered.length > 0
+    ? `pays off for pauses up to ≈ ${duration(breakEven(cached, request.model, lifetimeMs))}`
+    : `doesn't pay off: keep-alives for an hour cost more than a ≈ ${tokens(cached * writeRate(lifetimeMs))} rebuild`
+}
+
+// The keep-warm dialog, Claude Code's own question dialog: the pauses that pay off, each with what it saves, and Stop
+// while on; any other number of hours can be typed under Other, and is started only when it pays off too
+const askKeepWarm = async ($: EngineInterface): Promise<void> => {
   const request = await read($, last)
-  if (request === null || (await read($, warnedFor)) === request.at) {
+  if (request === null) {
+    return
+  }
+
+  const { ms } = await read($, lifetime)
+  const cached = request.read + request.written
+  const rebuildCost = cached * writeRate(ms)
+  const keeping = await read($, keepWarm)
+  const now = Math.max(await $.clock.now(), request.at)
+  const offered = worthwhileHours(cached, request.model, ms)
+  const choices = new Map(
+    askedHours(offered, keeping ? ASK_OPTIONS - 1 : ASK_OPTIONS).map(hours => [
+      `${hours} h · saves ≈ ${tokens(keepWarmSaving(hours, cached, request.model, ms))}`,
+      hours,
+    ]),
+  )
+  const question = keeping
+    ? `${keepingLine(keeping, now, rebuildCost)}. Stop it, or keep the cache warm for another pause?`
+    : `Each keep-alive ≈ ${tokens(keepAliveCost(cached, request.model, ms))} against ≈ ${tokens(rebuildCost)} to ` +
+      `write the conversation again: it ${limitLine(offered, request, ms)}. How long should the cache stay warm?`
+  const options = [...(keeping ? ['Stop'] : []), ...choices.keys()]
+  // Closing the dialog leaves keep warm as it was
+  const answer = await $.ui.ask(question, { header: KEEP_WARM_TITLE, options }).catch(() => null)
+  if (answer === null) {
+    return
+  }
+  if (answer === 'Stop') {
+    await update($, keepWarm, () => null)
+
+    return
+  }
+
+  const hours = choices.get(answer) ?? Number.parseFloat(answer)
+  if (!(hours > 0)) {
+    $.ui.toast(`Keep warm: "${answer}" is not a number of hours`)
+
+    return
+  }
+  if (keepWarmSaving(hours, cached, request.model, ms) <= 0) {
+    $.ui.toast(`Keep warm for ${hours} h doesn't pay off: it ${limitLine(offered, request, ms)}`)
+
+    return
+  }
+
+  await startKeepWarm($, hours)
+}
+
+// Sends a keep-alive into the session; noted first, so the turn it starts is told apart from the person's own
+const sendKeepAlive = async ($: EngineInterface): Promise<void> => {
+  await update($, keepWarm, now => (now === null ? null : { ...now, isAwaiting: true }))
+  const entered = await $.prompt.submit({ text: KEEP_ALIVE_TEXT }).then(
+    result => (result.drop === undefined ? null : result.drop),
+    (error: unknown) => String(error),
+  )
+  if (entered !== null) {
+    await update($, keepWarm, () => null)
+    $.ui.toast(`Keep warm stopped: the keep-alive was not sent (${entered})`)
+  }
+}
+
+// Once per countdown while the strip is amber: a keep-alive while keep warm is on, even one started after the strip
+// turned amber; otherwise a system notification naming the session, so a person away from the window knows which
+// one to keep warm
+const warnBeforeExpiry = async ($: EngineInterface, now: number): Promise<void> => {
+  const started = await read($, keepWarm)
+  if (started !== null && now >= started.until) {
+    await update($, keepWarm, () => null)
+  }
+
+  const request = await read($, last)
+  if (request === null) {
     return
   }
 
   const { ms } = await read($, lifetime)
   const left = request.at + ms - now
   if (left <= 0 || left > ms * WARN_SHARE) {
+    return
+  }
+
+  const keeping = await read($, keepWarm)
+  if (keeping !== null) {
+    if (keeping.keptFor !== request.at) {
+      await update($, keepWarm, () => ({ ...keeping, keptFor: request.at }))
+      await sendKeepAlive($)
+    }
+
+    return
+  }
+
+  if ((await read($, warnedFor)) === request.at) {
     return
   }
 
@@ -519,6 +674,19 @@ const record = async (
 }
 
 export const register: Register = on => {
+  // A keep-alive's row in the chat: one dim line in place of the message and its framing. The model still reads the
+  // whole message; in the terminal ctrl+o, the full view, still shows it
+  on('ui.render', { component: 'UserMessage' }, async ($, e, next) => {
+    const isKeepAlive = e.props.origin.kind === 'plugin' && e.props.text.includes(KEEP_ALIVE_TEXT)
+    if (!isKeepAlive || (e.surface === 'terminal' && e.props.isExpanded)) {
+      return next(e)
+    }
+
+    const { Text } = $.ui.resolve(e)
+
+    return <Text dimColor>cache-meter · keep-alive sent to keep the prompt cache warm</Text>
+  })
+
   // Compaction rewrites the conversation, so the next request rebuilds the cache; noted until that request
   let wasCompacted = false
 
@@ -565,6 +733,17 @@ export const register: Register = on => {
       if (e.index === 0) {
         wasCompacted = false
       }
+    }
+
+    // A turn keep warm did not send is the person's: keep warm stops there; its own adds to what it cost
+    const keeping = await read($, keepWarm)
+    if (keeping !== null && e.index === 0) {
+      const { ms } = await read($, lifetime)
+      await update($, keepWarm, () =>
+        keeping.isAwaiting
+          ? { ...keeping, isAwaiting: false, sent: keeping.sent + 1, cost: keeping.cost + tallyOf(request, ms).cost }
+          : null,
+      )
     }
 
     return response
@@ -685,6 +864,21 @@ export const register: Register = on => {
       </Box>
     )
 
+    // The strip's button opens the keep-warm dialog, while a pause would pay off or keep warm is on; while on, it
+    // says how long is left
+    const keeping = await read($, keepWarm)
+    const offered = worthwhileHours(cached, request.model, ms)
+    const keepWarmButton =
+      keeping || offered.length > 0 ? (
+        <Button
+          key="keep-warm-open"
+          label={keeping ? `Keep warm · ${duration(Math.max(0, keeping.until - now))} left` : 'Keep warm'}
+          plain
+          dimColor
+          // The dialog waits for the person, longer than a press may take: it is left to run on its own
+          onPress={() => void askKeepWarm($)}
+        />
+      ) : null
     const strongTone = (value: Tone) => (value === 'success' ? undefined : value)
     // What the cache saved this session, the headline of the strip
     const sessionSaved = totals.requests > 0 ? `≈ ${tokens(savedTokens(totals))}` : null
@@ -819,7 +1013,10 @@ export const register: Register = on => {
           ]
         : []),
     ]
-    const shown = fitPills(candidates, e.props.bodyColumns - STRIP_RESERVED)
+    const shown = fitPills(
+      candidates,
+      e.props.bodyColumns - STRIP_RESERVED - (keepWarmButton ? KEEP_WARM_COLUMNS : 0),
+    )
 
     // The one-line strip: the numbers that matter at a glance, and the arrow that opens everything else
     const strip = (
@@ -827,13 +1024,16 @@ export const register: Register = on => {
         <Box key="pills" flexDirection="row" flexWrap="nowrap" columnGap={1}>
           {shown}
         </Box>
-        <Button
-          key="cache-meter-toggle"
-          label={expanded ? '↓' : '↑'}
-          plain
-          dimColor
-          onPress={() => update($, isExpanded, now => !now)}
-        />
+        <Box key="strip-controls" flexDirection="row" alignItems="center" columnGap={2}>
+          {keepWarmButton}
+          <Button
+            key="cache-meter-toggle"
+            label={expanded ? '↓' : '↑'}
+            plain
+            dimColor
+            onPress={() => update($, isExpanded, now => !now)}
+          />
+        </Box>
       </Box>
     )
 

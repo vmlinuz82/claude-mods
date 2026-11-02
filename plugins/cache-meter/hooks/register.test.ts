@@ -2,7 +2,8 @@ import type { On, RenderElement, TurnUsage } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 
-const MINUTE = 60_000
+const SECOND = 1000
+const MINUTE = 60 * SECOND
 // The countdown ticks every second, so a test that moves the clock minutes ahead steps through each tick
 const SLOW = { timeoutMs: 30_000 }
 const MODEL = 'claude-opus-5-5'
@@ -13,7 +14,8 @@ const band = {
 } as const
 
 // system: what `uname -s` answers; titles: the title lines grep finds in the transcript; greps: what grep was asked
-// for; commands and toasts: what the mod ran and showed
+// for; commands, toasts and prompts: what the mod ran, showed and sent into the session; asked: each question the
+// dialog put, with its options; answer: what the person picks or types there, null when they close it
 type Setup = {
   env: Record<string, string>
   settings: Record<string, unknown>
@@ -23,6 +25,9 @@ type Setup = {
   greps: string[][]
   commands: string[][]
   toasts: string[]
+  prompts: string[]
+  asked: { question: string; options: string[] }[]
+  answer: string | null
 }
 type Usage = { read: number; written: number; fresh?: number; model?: string }
 
@@ -58,6 +63,22 @@ const engine = (on: On, setup: Setup, queue: Usage[], beneath: 'none' | 'band' |
 
     return { value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
+  on('prompt.submit', async (_$, e) => {
+    setup.prompts.push(e.text)
+
+    return { text: e.text }
+  })
+  // Claude Code's question dialog: the question noted, answered with what the test set
+  on('tool.call', async (_$, e) => {
+    const [one] = (e as unknown as { questions: { question: string; options: { label: string }[] }[] }).questions
+    setup.asked.push({ question: one.question, options: one.options.map(option => option.label) })
+
+    if (setup.answer === null) {
+      return { deny: 'the person closed the dialog' } as never
+    }
+
+    return { result: { answers: { [one.question]: setup.answer } }, text: setup.answer } as never
+  })
   on('ui.toast', async (_$, e) => {
     setup.toasts.push(e.text)
 
@@ -80,6 +101,8 @@ const engine = (on: On, setup: Setup, queue: Usage[], beneath: 'none' | 'band' |
       h(Box, { key: 'first', borderStyle: 'round', borderColor: 'promptBorder' }, h(Text, {}, 'first band')),
     ) as RenderElement
   })
+  // The engine's own drawing of a chat row, which the plugin passes to for anything but its keep-alives
+  on('ui.render', { component: 'UserMessage' }, async () => ({ type: 'engine', ref: 0 }) as RenderElement)
   on('turn.step', async function* (_$, e) {
     const next = queue.shift()
     const usage: TurnUsage | null = next
@@ -105,6 +128,9 @@ const fresh = (system = 'Linux'): Setup => ({
   greps: [],
   commands: [],
   toasts: [],
+  prompts: [],
+  asked: [],
+  answer: '',
 })
 
 // A model request runs as its stream is read, so the helper reads it to the end
@@ -410,10 +436,11 @@ test(
     await step($, queue, { read: 0, written: 10_000, fresh: 50 }, 't1', 0)
     await step($, queue, { read: 10_000, written: 500, fresh: 20 }, 't1', 1)
 
-    // 50 columns leave 42 for pills: the state and the time fit, the saving (the next most important) does not
+    // 78 columns leave 42 for pills beside the keep-warm button: the state and the time fit, the saving (the next
+    // most important) does not
     const narrow = await $.ui.mount({
       ...band,
-      props: { ...(band.props as object), bodyColumns: 50 } as never,
+      props: { ...(band.props as object), bodyColumns: 78 } as never,
       surface: 'desktop',
     })
     expect(await texts(narrow)).toEqual(['Cache warm', '5:00', 'left'])
@@ -512,4 +539,181 @@ test('names the session by the latest title its transcript holds, by its folder 
     '"type":"custom-title"',
     '/home/someone/.claude/projects/-home-someone-my-project/session-1.jsonl',
   ])
+})
+
+// Sonnet 4.6 reads at 0.1: a keep-alive of a 100k conversation costs ≈ 10.3k, one every 51 minutes on a one-hour
+// cache, against ≈ 200k to write it again; 16 hours of keep-alives still cost less, 24 do not
+const SONNET = 'claude-sonnet-4-6'
+const hourCache = (): Setup => ({ ...fresh('Linux'), settings: { promptCacheTtl: '1h' } })
+// The dialog answers after the press resolves
+const settle = () => new Promise(resolve => setTimeout(resolve, 20))
+const buttons = async (ui: { findAll: (query: { type: 'Button' }) => Promise<unknown[]> }) =>
+  (await ui.findAll({ type: 'Button' })).map(one => (one as { props: { label?: string } }).props.label)
+
+test('keeps the cache warm with a keep-alive as it turns amber, until the person writes', SLOW, async ($, on) => {
+  const clock = mock.clock(on, { now: 0 })
+  const queue: Usage[] = []
+  const setup = hourCache()
+  engine(on, setup, queue)
+  await $.session.start({ cwd: '/home/someone/project', surface: 'desktop', isInteractive: true })
+  await step($, queue, { read: 0, written: 100_000, model: SONNET }, 't1')
+
+  const ui = await $.ui.mount({ ...band, surface: 'desktop' })
+  expect(await buttons(ui)).toEqual(['Keep warm', '↑'])
+
+  // The strip's button asks in Claude Code's dialog: four of the pauses, each with what it saves
+  setup.answer = '8 h · saves ≈ 97k'
+  await ui.press({ key: 'keep-warm-open' })
+  await settle()
+  expect(setup.asked).toEqual([
+    {
+      question:
+        'Each keep-alive ≈ 10k against ≈ 200k to write the conversation again: it pays off for pauses up to ' +
+        '≈ 16 h 30 min. How long should the cache stay warm?',
+      options: ['1 h · saves ≈ 179k', '4 h · saves ≈ 149k', '8 h · saves ≈ 97k', '16 h · saves ≈ 4.3k'],
+    },
+  ])
+  await clock.advance(50 * MINUTE)
+  expect(setup.prompts).toEqual([])
+  await clock.advance(MINUTE)
+  expect(setup.prompts).toEqual(["Keep warm, it's cold out here: reply ok, no tools."])
+  // The keep-alive goes out instead of the notification
+  expect(setup.commands).toEqual([])
+
+  await step($, queue, { read: 100_000, written: 50, model: SONNET }, 'keep-alive-1')
+  await open(ui)
+  // Sonnet writes an hour's cache at twice the input price, so far the cache cost more than it saved
+  expect(await lineStarting(ui, 'Session saved')).toBe(
+    'Session saved ≈ −10k tokens (−5%) · paid as for 211k regular input tokens instead of 201k',
+  )
+
+  // While on, the button says how long is left and the dialog how it is going; closing the dialog changes nothing
+  expect((await buttons(ui))[0]).toBe('Keep warm · 7 h 9 min left')
+  setup.answer = null
+  await ui.press({ key: 'keep-warm-open' })
+  await settle()
+  expect(setup.asked[1].question).toBe(
+    'Keeping warm · 7 h 9 min left · 1 keep-alive ≈ 11k against a ≈ 200k rebuild. ' +
+      'Stop it, or keep the cache warm for another pause?',
+  )
+  expect((await buttons(ui))[0]).toBe('Keep warm · 7 h 9 min left')
+
+  // The person's own message ends it
+  await step($, queue, { read: 100_050, written: 300, model: SONNET }, 'own-1')
+  expect((await buttons(ui))[0]).toBe('Keep warm')
+})
+
+test('stops keeping warm when its hours run out, and the notification comes back', SLOW, async ($, on) => {
+  const clock = mock.clock(on, { now: 0 })
+  const queue: Usage[] = []
+  const setup = hourCache()
+  engine(on, setup, queue)
+  await $.session.start({ cwd: '/home/someone/project', surface: 'desktop', isInteractive: true })
+  await step($, queue, { read: 0, written: 100_000, model: SONNET }, 't1')
+  const ui = await $.ui.mount({ ...band, surface: 'desktop' })
+  setup.answer = '1 h · saves ≈ 179k'
+  await ui.press({ key: 'keep-warm-open' })
+  await settle()
+
+  await clock.advance(51 * MINUTE)
+  await step($, queue, { read: 100_000, written: 50, model: SONNET }, 'keep-alive-1')
+  await clock.advance(51 * MINUTE)
+
+  expect(setup.prompts).toHaveLength(1)
+  expect(setup.commands.map(command => command[1])).toEqual(['project: cache expires in 9 min'])
+})
+
+test('offers no pause where an hour of keep-alives costs more than a rebuild', SLOW, async ($, on) => {
+  mock.clock(on, { now: 0 })
+  const queue: Usage[] = []
+  engine(on, fresh('Linux'), queue)
+  await $.session.start({ cwd: '/home/someone/project', surface: 'desktop', isInteractive: true })
+  // A five-minute cache: 15 keep-alives an hour at ≈ 1.2k each against ≈ 13k to write the 10k again
+  await step($, queue, { read: 0, written: 10_000, model: SONNET }, 't1')
+
+  const ui = await $.ui.mount({ ...band, surface: 'desktop' })
+  // Nothing to offer, so the strip has no keep-warm button
+  expect(await buttons(ui)).toEqual(['↑'])
+})
+
+test('starts a typed number of hours only when it pays off, and offers Stop while on', SLOW, async ($, on) => {
+  mock.clock(on, { now: 0 })
+  const queue: Usage[] = []
+  const setup = hourCache()
+  engine(on, setup, queue)
+  await $.session.start({ cwd: '/home/someone/project', surface: 'desktop', isInteractive: true })
+  await step($, queue, { read: 0, written: 100_000, model: SONNET }, 't1')
+  const ui = await $.ui.mount({ ...band, surface: 'desktop' })
+
+  // Typed under Other: 30 hours of keep-alives cost more than the rebuild, so nothing starts
+  setup.answer = '30'
+  await ui.press({ key: 'keep-warm-open' })
+  await settle()
+  expect(setup.toasts).toEqual(["Keep warm for 30 h doesn't pay off: it pays off for pauses up to ≈ 16 h 30 min"])
+  expect((await buttons(ui))[0]).toBe('Keep warm')
+
+  setup.answer = '12'
+  await ui.press({ key: 'keep-warm-open' })
+  await settle()
+  expect((await buttons(ui))[0]).toBe('Keep warm · 12 h left')
+
+  // While on, Stop comes first, then three of the pauses
+  setup.answer = 'Stop'
+  await ui.press({ key: 'keep-warm-open' })
+  await settle()
+  expect(setup.asked[2].options).toEqual([
+    'Stop',
+    '1 h · saves ≈ 179k',
+    '8 h · saves ≈ 97k',
+    '16 h · saves ≈ 4.3k',
+  ])
+  expect((await buttons(ui))[0]).toBe('Keep warm')
+})
+
+test('sends a keep-alive at once when keep warm starts after the strip turned amber', SLOW, async ($, on) => {
+  const clock = mock.clock(on, { now: 0 })
+  const queue: Usage[] = []
+  const setup = hourCache()
+  engine(on, setup, queue)
+  await $.session.start({ cwd: '/home/someone/project', surface: 'desktop', isInteractive: true })
+  await step($, queue, { read: 0, written: 100_000, model: SONNET }, 't1')
+  const ui = await $.ui.mount({ ...band, surface: 'desktop' })
+
+  // Amber already: the notification went out, then the person turns keep warm on
+  await clock.advance(52 * MINUTE)
+  expect(setup.commands).toHaveLength(1)
+  setup.answer = '1 h · saves ≈ 179k'
+  await ui.press({ key: 'keep-warm-open' })
+  await settle()
+  await clock.advance(2 * SECOND)
+
+  expect(setup.prompts).toEqual(["Keep warm, it's cold out here: reply ok, no tools."])
+})
+
+test('draws a keep-alive in the chat as one dim line, every other message as the engine does', SLOW, async ($, on) => {
+  mock.clock(on, { now: 0 })
+  engine(on, fresh('Linux'), [])
+  await $.session.start({ cwd: '/home/someone/project', surface: 'desktop', isInteractive: true })
+  const row = (text: string, origin: object, surface: 'desktop' | 'terminal', isExpanded = false) =>
+    $.ui.mount({
+      plugin: 'cache-meter',
+      component: 'UserMessage',
+      props: { text, origin, isExpanded } as never,
+      surface,
+    })
+  const keepAlive = "Keep warm, it's cold out here: reply ok, no tools."
+  const plugin = { kind: 'plugin', name: 'cache-meter' }
+
+  // The desktop has no ctrl+o of its own, so the line stands even in a full view
+  for (const isExpanded of [false, true]) {
+    expect(await texts(await row(keepAlive, plugin, 'desktop', isExpanded))).toEqual([
+      'cache-meter · keep-alive sent to keep the prompt cache warm',
+    ])
+  }
+  expect(await texts(await row(keepAlive, plugin, 'terminal'))).toEqual([
+    'cache-meter · keep-alive sent to keep the prompt cache warm',
+  ])
+  // The terminal's ctrl+o shows the whole message, and the person's own words are never touched
+  expect(await texts(await row(keepAlive, plugin, 'terminal', true))).toEqual([])
+  expect(await texts(await row('ok, carry on', { kind: 'composer' }, 'desktop'))).toEqual([])
 })

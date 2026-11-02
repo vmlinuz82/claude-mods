@@ -48,6 +48,17 @@ export type HourVsFive = {
   extra: number
 }
 
+// Keeping the cache warm until `until`: the keep-alives sent and what they cost, in regular input tokens; isAwaiting:
+// a keep-alive was sent and its turn has not started yet; keptFor: the start of the request whose countdown already
+// got its keep-alive
+export type KeepWarm = {
+  until: number
+  sent: number
+  cost: number
+  isAwaiting: boolean
+  keptFor: number | null
+}
+
 // The whole session so far: its turns, how many times each kind of rebuild happened, and the hour against five minutes
 export type SessionTally = Tally & {
   turns: number
@@ -59,10 +70,11 @@ declare module 'claude-code' {
   interface PluginState {
     // last: the latest request that used the cache; turns: newest first; window: the model's context window in
     // tokens; clock: the time as last read; isExpanded: the details opened under the one-line strip; warnedFor: the
-    // start of the request whose countdown already sent its notification
+    // start of the request whose countdown already sent its notification; keepWarm: null while off
     'cache-meter': {
       isExpanded: boolean
       warnedFor: number | null
+      keepWarm: KeepWarm | null
       last: CacheRequest | null
       lifetime: Lifetime
       turns: TurnSummary[]
