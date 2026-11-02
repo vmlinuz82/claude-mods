@@ -17,7 +17,8 @@ const WARN_SHARE = 0.15
 // The context bar turns amber from 70% full and red from 90%, where automatic compaction gets close
 const CONTEXT_WARN = 0.7
 const CONTEXT_FULL = 0.9
-// A turn's first request that wrote more than it read rebuilt the cache instead of reading it
+// A turn's first request that read back less than half of what the request before it had cached rebuilt the cache
+// instead of reading it; a long new message writes more than it reads without losing anything
 const REBUILT_SHARE = 0.5
 const KEEP_TURNS = 50
 // Output costs five times the input price on every current Claude model
@@ -162,7 +163,8 @@ const savedTokens = (tally: Tally): number => tally.costWithoutCache - tally.cos
 const savingLine = (label: string, tally: Tally): string =>
   `${label} saved ≈ ${tokens(savedTokens(tally))} tokens (${saved(tally)}) · paid as for ${tokens(tally.cost)} regular input tokens instead of ${tokens(tally.costWithoutCache)}`
 
-const isRebuilt = (request: CacheRequest): boolean => request.written > REBUILT_SHARE * (request.read + request.written)
+const isRebuilt = (before: CacheRequest, request: CacheRequest): boolean =>
+  request.read < REBUILT_SHARE * (before.read + before.written)
 
 // Claude Code's own order: FORCE_PROMPT_CACHING_5M, the variable, the setting, ENABLE_PROMPT_CACHING_1H
 const configuredLifetime = async ($: EngineInterface): Promise<number | null> => {
@@ -236,7 +238,7 @@ const rebuildOf = (
   ms: number,
   change: Change | null,
 ) => {
-  if (before === null || !isRebuilt(request)) {
+  if (before === null || !isRebuilt(before, request)) {
     return null
   }
 
@@ -415,14 +417,20 @@ const hourExtra = (request: CacheRequest): number => request.written * (writeRat
 // A turn after a pause between five minutes and an hour is where the two lifetimes part: the hour reads the
 // conversation from cache where five minutes writes it again. With a one-hour cache that kept it, the read part was
 // kept; with a five-minute cache that expired, the rewritten part is what the hour would have kept
-const hourKept = (request: CacheRequest, gap: number, ms: number, rebuildKind: string | null): number => {
+const hourKept = (
+  before: CacheRequest,
+  request: CacheRequest,
+  gap: number,
+  ms: number,
+  rebuildKind: string | null,
+): number => {
   if (gap <= FIVE_MINUTES || gap > ONE_HOUR) {
     return 0
   }
 
   const saving = writeRate(FIVE_MINUTES) - readRate(request.model)
   if (ms >= ONE_HOUR) {
-    return isRebuilt(request) ? 0 : request.read * saving
+    return isRebuilt(before, request) ? 0 : request.read * saving
   }
 
   return rebuildKind === 'expired' ? request.written * saving : 0
@@ -479,7 +487,7 @@ const record = async (
 
   const gap = before === null ? 0 : request.at - before.at
   const change = before === null ? null : changeBetween(before, request, wasCompacted)
-  const learned = before === null ? known : learn(known, gap, isRebuilt(request), change)
+  const learned = before === null ? known : learn(known, gap, isRebuilt(before, request), change)
   if (learned !== known) {
     await update($, lifetime, () => learned)
   }
@@ -495,7 +503,7 @@ const record = async (
   await update($, turns, list =>
     [summary, ...list.filter(one => isCurrentTurn(one) && one.turnId !== turnId)].slice(0, KEEP_TURNS),
   )
-  const kept = before === null ? 0 : hourKept(request, gap, learned.ms, rebuild?.kind ?? null)
+  const kept = before === null ? 0 : hourKept(before, request, gap, learned.ms, rebuild?.kind ?? null)
   await update($, session, (stored: SessionTally) => {
     const now = sessionOf(stored)
 

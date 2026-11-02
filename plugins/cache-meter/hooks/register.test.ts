@@ -284,6 +284,22 @@ test('names why a turn rebuilt the cache and counts rebuilds for the session', S
   expect(await lineStarting(ui, 'Session')).toEndWith(' · 3 rebuilds: expired, model switch, unknown')
 })
 
+test('keeps the lifetime when a long paste after a pause writes more than it read', SLOW, async ($, on) => {
+  const clock = mock.clock(on, { now: 0 })
+  const queue: Usage[] = []
+  engine(on, { ...fresh(), settings: { promptCacheTtl: '1h' } }, queue)
+  await $.session.start({ cwd: '/tmp', surface: 'desktop', isInteractive: true })
+
+  await step($, queue, { read: 0, written: 10_000 }, 't1')
+  await clock.advance(12 * MINUTE)
+  await step($, queue, { read: 10_000, written: 70_000 }, 't2')
+
+  const ui = await $.ui.mount({ ...band, surface: 'desktop' })
+  await open(ui)
+  expect(await lineStarting(ui, 'left of')).toBe('left of 1 h TTL')
+  expect(await lineStarting(ui, 'Last turn rebuilt')).toBe('')
+})
+
 test('takes the lifetime from settings, the environment or the kind of account', SLOW, async ($, on) => {
   mock.clock(on, { now: 0 })
   const queue: Usage[] = []
